@@ -150,29 +150,46 @@ function onConnected(source) {
 }
 
 async function connectBle() {
-  if (!("bluetooth" in navigator)) {
-    dom.connectionStatus.textContent = "Web Bluetooth nicht verfügbar — nutze Chrome auf localhost.";
+  // Web Bluetooth braucht einen sicheren Kontext (localhost oder https)
+  if (!window.isSecureContext) {
+    dom.connectionStatus.textContent =
+      "⚠️ Bluetooth funktioniert nur über http://localhost:8080 — öffne die App nicht als Datei direkt im Browser!";
     return;
   }
+  if (!("bluetooth" in navigator)) {
+    dom.connectionStatus.textContent =
+      "Web Bluetooth nicht verfügbar — nutze Google Chrome (kein Firefox/Safari).";
+    return;
+  }
+
   await cleanupConnection();
-  dom.connectionStatus.textContent = "Gerät auswählen …";
+  dom.connectionStatus.textContent = "Bluetooth-Dialog öffnet … wähle SmartShirt-ESP32";
+
   try {
-    // acceptAllDevices zeigt alle BLE-Geräte — zuverlässigster Weg
     const device = await navigator.bluetooth.requestDevice({
+      // Zeigt alle BLE-Geräte — zuverlässiger als Service-UUID-Filter
       acceptAllDevices: true,
       optionalServices: [BLE_SERVICE],
     });
 
-    dom.connectionStatus.textContent = `Verbinde mit ${device.name ?? "Gerät"} …`;
+    dom.connectionStatus.textContent = `Verbinde mit "${device.name ?? "Gerät"}" …`;
     state.bleDevice = device;
 
     const server  = await device.gatt.connect();
-    const service = await server.getPrimaryService(BLE_SERVICE);
-    state.bleChar  = await service.getCharacteristic(BLE_TX_CHAR);
+
+    let service;
+    try {
+      service = await server.getPrimaryService(BLE_SERVICE);
+    } catch {
+      dom.connectionStatus.textContent =
+        `"${device.name}" gefunden, aber kein SmartShirt-Service — falsches Gerät gewählt?`;
+      return;
+    }
+
+    state.bleChar = await service.getCharacteristic(BLE_TX_CHAR);
     await state.bleChar.startNotifications();
     state.bleChar.addEventListener("characteristicvaluechanged", onBleData);
 
-    // Reconnect automatisch wenn Verbindung abbricht
     device.addEventListener("gattserverdisconnected", () => {
       dom.connDot.className = "conn-dot";
       dom.connectionStatus.textContent = "Verbindung unterbrochen — bitte neu verbinden.";
@@ -265,8 +282,19 @@ function parseLine(line) {
 }
 
 function handleSample(sample) {
+  const firstSample = !state.latest;
   state.latest = sample;
   dom.liveData.textContent = JSON.stringify(sample, null, 2);
+
+  // Sobald das erste Sample ankommt: Kalibrierungsbuttons freischalten
+  if (firstSample) {
+    dom.calStand.disabled = false;
+    dom.calProne.disabled = false;
+    dom.calStand.textContent = "Position jetzt speichern";
+    dom.calProne.textContent = "Position jetzt speichern";
+    const waiting = document.getElementById("cal-waiting");
+    if (waiting) waiting.remove();
+  }
 
   if (state.isRecording) {
     state.recBuffer.push(sample);
@@ -308,21 +336,21 @@ let _calStanding = null;
 let _calProne    = null;
 
 dom.calStand.addEventListener("click", () => {
-  if (!state.latest) { dom.calStandOk.textContent = "Noch keine Sensordaten — kurz warten."; dom.calStandOk.hidden = false; return; }
   _calStanding = { ...state.latest };
   dom.calStandOk.textContent = "✅ Gespeichert";
   dom.calStandOk.hidden = false;
   dom.calStand.disabled = true;
+  dom.calStand.textContent = "✅ Gespeichert";
   dom.stepChip1.classList.add("done");
   checkCalReady();
 });
 
 dom.calProne.addEventListener("click", () => {
-  if (!state.latest) { dom.calProneOk.textContent = "Noch keine Sensordaten — kurz warten."; dom.calProneOk.hidden = false; return; }
   _calProne = { ...state.latest };
   dom.calProneOk.textContent = "✅ Gespeichert";
   dom.calProneOk.hidden = false;
   dom.calProne.disabled = true;
+  dom.calProne.textContent = "✅ Gespeichert";
   dom.stepChip2.classList.add("done");
   checkCalReady();
 });
