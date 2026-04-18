@@ -127,8 +127,11 @@ void setup() {
   BLEServer* srv = BLEDevice::createServer();
   srv->setCallbacks(new BleCallbacks());
   BLEService* svc = srv->createService(SVC_UUID);
-  txChar = svc->createCharacteristic(TX_CHAR_UUID, BLECharacteristic::PROPERTY_NOTIFY);
-  txChar->addDescriptor(new BLE2902());
+  txChar = svc->createCharacteristic(TX_CHAR_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ);
+  BLE2902* desc = new BLE2902();
+  desc->setNotifications(true);   // pre-enable so notify() always fires
+  txChar->addDescriptor(desc);
   svc->start();
   BLEAdvertising* adv = BLEDevice::getAdvertising();
   adv->addServiceUUID(SVC_UUID);
