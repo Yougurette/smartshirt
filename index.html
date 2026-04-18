@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartShirt Coach</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>SmartShirt Coach</h1>
+        <p>Körpernahes Feedback statt Zahlen.</p>
+      </header>
+
+      <section class="panel" id="connection-panel">
+        <h2>1) Verbindung</h2>
+        <div class="row">
+          <button id="connect-serial">ESP32 via Serial verbinden</button>
+          <button id="toggle-mock">Mockdaten starten</button>
+        </div>
+        <small id="connection-status">Noch nicht verbunden.</small>
+      </section>
+
+      <section class="panel" id="calibration-panel">
+        <h2>2) Kalibrierung</h2>
+        <ol>
+          <li>Stehen: Arme locker an den Seiten → <button id="cal-stand">Jetzt speichern</button></li>
+          <li>Bauchlage: flach auf den Bauch, Arme nah am Körper → <button id="cal-prone">Jetzt speichern</button></li>
+        </ol>
+        <p id="calibration-status">Warte auf Kalibrierung ...</p>
+      </section>
+
+      <section class="panel" id="optimum-panel">
+        <h2>3) Optimum aufnehmen</h2>
+        <div class="exercise-card">
+          <h3>Frontal Raise</h3>
+          <p>Mache 3–5 saubere Wiederholungen.</p>
+          <button data-capture="frontal">Optimum speichern</button>
+        </div>
+        <div class="exercise-card">
+          <h3>Side to Side (Bauchlage)</h3>
+          <p>Gehe bewusst nach links und rechts.</p>
+          <button data-capture="side">Optimum speichern</button>
+        </div>
+        <p id="optimum-status">Noch keine Optimum-Daten gespeichert.</p>
+      </section>
+
+      <section class="panel" id="workout-panel">
+        <h2>4) Workout starten</h2>
+        <div class="row">
+          <button data-workout="frontal">Frontal Raise starten</button>
+          <button data-workout="side">Side to Side starten</button>
+          <button id="stop-workout" class="secondary">Stop</button>
+        </div>
+
+        <div class="illustration" id="illustration">Wähle eine Übung.</div>
+
+        <div class="feedback" id="feedback-box">
+          <p class="hint" id="hint-text">Feedback erscheint hier ...</p>
+          <p class="quality" id="quality-text">Bereit.</p>
+        </div>
+      </section>
+
+      <section class="panel" id="debug-panel">
+        <h2>Live Daten (Debug)</h2>
+        <pre id="live-data">-</pre>
+      </section>
+    </main>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
