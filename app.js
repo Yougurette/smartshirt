@@ -39,6 +39,7 @@ const state = {
   // workout
   activeWorkout: null,
   workoutBuffer: [],
+  workoutStats:  null,
 
   // animation
   videoTimer:    null,
@@ -86,6 +87,21 @@ const dom = {
   hintText:          $("hint-text"),
   qualityText:       $("quality-text"),
   stopWorkout:       $("stop-workout"),
+  // results
+  resultHero:        $("result-hero"),
+  resultGradeIcon:   $("result-grade-icon"),
+  resultTitle:       $("result-title"),
+  resultSubtitle:    $("result-subtitle"),
+  barLeft:           $("bar-left"),
+  barRight:          $("bar-right"),
+  valLeft:           $("val-left"),
+  valRight:          $("val-right"),
+  symmDiff:          $("symm-diff"),
+  statGood:          $("stat-good"),
+  statWarn:          $("stat-warn"),
+  statStability:     $("stat-stability"),
+  resultFeedbackText:$("result-feedback-text"),
+  resultDoneBtn:     $("result-done-btn"),
   // debug
   liveData:          $("live-data"),
   dataDot:           $("data-dot"),
@@ -102,14 +118,15 @@ const dom = {
 let sampleCount = 0;
 
 // ── Screen Router ────────────────────────────────────────────────
-const SCREENS = ["connect", "calibrate", "exercises", "detail", "workout"];
+const SCREENS = ["connect", "calibrate", "exercises", "detail", "workout", "results"];
 
 const SCREEN_META = {
   connect:   { title: "SmartShirt Physio", back: null },
-  calibrate: { title: "Kalibrierung",       back: null },   // no escape from calibration
+  calibrate: { title: "Kalibrierung",       back: null },
   exercises: { title: "Übungen",            back: null },
   detail:    { title: "Übung",              back: "exercises" },
-  workout:   { title: "Workout",            back: null },    // handled by stop button
+  workout:   { title: "Workout",            back: null },
+  results:   { title: "Auswertung",         back: null },
 };
 
 function showScreen(name) {
@@ -528,22 +545,28 @@ dom.startWorkoutBtn.addEventListener("click", () => {
   if (!state.optimum[id]) return;
   state.activeWorkout  = id;
   state.workoutBuffer  = [];
+  state.workoutStats   = { goodCount: 0, warnCount: 0, backWarnCount: 0,
+                           leftSum: 0, rightSum: 0, evalCount: 0 };
 
   const ex = EXERCISES[id];
-  dom.exerciseImage.src       = ex.frames[0];
+  dom.exerciseImage.src       = ex.image;
   dom.workoutName.textContent = ex.title;
-
-  dom.exerciseImage.src = ex.image;   // GIF animiert sich selbst
   setFeedback("neutral", "⏳", "Workout läuft — mach los!", "Sammle Daten …");
   showScreen("workout");
 });
 
 dom.stopWorkout.addEventListener("click", stopWorkout);
+dom.resultDoneBtn.addEventListener("click", () => showScreen("exercises"));
 
 function stopWorkout() {
+  const stats = state.workoutStats;
   state.activeWorkout = null;
   stopFrameAnimation();
-  showScreen("exercises");
+  if (stats && stats.evalCount > 0) {
+    showResults(stats);
+  } else {
+    showScreen("exercises");
+  }
 }
 
 function startFrameAnimation(frames) {
@@ -580,20 +603,23 @@ function updateFeedback() {
 }
 
 function evaluateFrontalRaise(cur, tgt) {
-  // Back stability: excessive forward/back rocking
+  const st = state.workoutStats;
+  if (st) { st.leftSum += cur.leftFlex; st.rightSum += cur.rightFlex; st.evalCount++; }
+
   if (cur.gxAbs > tgt.gxAbs * 2.5 + 150) {
+    if (st) st.backWarnCount++;
     setFeedback("warn", "⚠️",
       "Rücken stabilisieren — weniger vor und zurück schwingen.",
       "Körperspannung aufbauen");
     return;
   }
 
-  const lDelta  = cur.leftFlex  - tgt.leftFlex;
-  const rDelta  = cur.rightFlex - tgt.rightFlex;
-  const asymm   = lDelta - rDelta;  // positive → left higher relative to target
+  const lDelta = cur.leftFlex  - tgt.leftFlex;
+  const rDelta = cur.rightFlex - tgt.rightFlex;
+  const asymm  = lDelta - rDelta;
 
-  // Both arms clearly below target
   if (lDelta < -150 && rDelta < -150) {
+    if (st) st.warnCount++;
     setFeedback("warn", "↑",
       "Beide Arme höher heben — du schöpfst den Bewegungsbereich noch nicht aus.",
       "Mehr Amplitude");
@@ -601,18 +627,79 @@ function evaluateFrontalRaise(cur, tgt) {
   }
 
   if (Math.abs(asymm) < 100) {
-    setFeedback("good", "✅",
-      "Sehr gut! Beide Arme gleichmäßig auf Zielhöhe.",
-      "Perfekte Ausführung");
+    if (st) st.goodCount++;
+    setFeedback("good", "✅", "Sehr gut! Beide Arme gleichmäßig auf Zielhöhe.", "Perfekte Ausführung");
   } else if (asymm < -100) {
-    setFeedback("warn", "←",
-      "Linker Arm zu niedrig — hebe ihn auf gleiche Höhe wie rechts.",
-      "Linke Seite stärken");
+    if (st) st.warnCount++;
+    setFeedback("warn", "←", "Linker Arm zu niedrig — hebe ihn auf gleiche Höhe wie rechts.", "Linke Seite stärken");
   } else {
-    setFeedback("warn", "→",
-      "Rechter Arm zu niedrig — hebe ihn auf gleiche Höhe wie links.",
-      "Rechte Seite stärken");
+    if (st) st.warnCount++;
+    setFeedback("warn", "→", "Rechter Arm zu niedrig — hebe ihn auf gleiche Höhe wie links.", "Rechte Seite stärken");
   }
+}
+
+function showResults(st) {
+  const total   = st.goodCount + st.warnCount;
+  const goodPct = total > 0 ? Math.round(st.goodCount / total * 100) : 0;
+  const warnPct = 100 - goodPct;
+  const backPct = total > 0 ? Math.round((1 - st.backWarnCount / st.evalCount) * 100) : 100;
+
+  // Symmetry bars: share of movement between L and R
+  const leftAvg  = st.evalCount > 0 ? st.leftSum  / st.evalCount : 0;
+  const rightAvg = st.evalCount > 0 ? st.rightSum / st.evalCount : 0;
+  const total2   = leftAvg + rightAvg;
+  const leftPct  = total2 > 0 ? Math.round(leftAvg  / total2 * 100) : 50;
+  const rightPct = 100 - leftPct;
+  const diff     = Math.abs(leftPct - rightPct);
+
+  dom.barLeft.style.width  = leftPct  + "%";
+  dom.barRight.style.width = rightPct + "%";
+  dom.valLeft.textContent  = leftPct  + "%";
+  dom.valRight.textContent = rightPct + "%";
+
+  if (diff <= 3) {
+    dom.symmDiff.textContent = "Perfekte Symmetrie — Links und Rechts nahezu gleich.";
+  } else if (diff <= 8) {
+    const side = leftPct > rightPct ? "Links" : "Rechts";
+    dom.symmDiff.textContent = `Leichte Asymmetrie: ${side} ${diff}% dominanter.`;
+  } else {
+    const side = leftPct > rightPct ? "Links" : "Rechts";
+    dom.symmDiff.textContent = `Deutliche Asymmetrie: ${side} um ${diff}% stärker.`;
+  }
+
+  dom.statGood.textContent      = goodPct + "%";
+  dom.statWarn.textContent      = warnPct + "%";
+  dom.statStability.textContent = backPct + "%";
+
+  // Overall grade
+  let icon, title, subtitle, feedback;
+  if (goodPct >= 75 && diff <= 5 && backPct >= 80) {
+    icon = "🏆"; title = "Ausgezeichnet!"; subtitle = "Sehr ausgeglichenes Workout";
+    feedback = "Deine Ausführung war sehr gleichmäßig und kontrolliert. Beide Arme arbeiteten symmetrisch — weiter so!";
+  } else if (goodPct >= 50 && diff <= 12) {
+    icon = "✅"; title = "Gute Leistung!"; subtitle = "Solides Workout mit Luft nach oben";
+    const tip = diff > 5 ? ` Arbeite daran, ${leftPct > rightPct ? "rechts" : "links"} etwas mehr einzusetzen.` : "";
+    feedback = `Du hast ${goodPct}% der Zeit sauber ausgeführt.${tip}`;
+  } else if (goodPct >= 30) {
+    icon = "💪"; title = "Weiter üben!"; subtitle = "Fokus auf gleichmäßige Bewegung";
+    feedback = diff > 12
+      ? `Große Asymmetrie zwischen Links (${leftPct}%) und Rechts (${rightPct}%). Konzentriere dich darauf, beide Arme gleichmäßig zu heben.`
+      : "Versuche, die Bewegung kontrollierter und gleichmäßiger auszuführen. Weniger Schwung, mehr Muskelkontrolle.";
+  } else {
+    icon = "🔄"; title = "Aufwärmen & nochmal!"; subtitle = "Zu wenig Wiederholungen erkannt";
+    feedback = "Es wurden zu wenig auswertbare Bewegungen erkannt. Stelle sicher, dass die Sensoren gut sitzen und führe die Übung vollständig aus.";
+  }
+
+  dom.resultGradeIcon.textContent = icon;
+  dom.resultTitle.textContent     = title;
+  dom.resultSubtitle.textContent  = subtitle;
+  dom.resultFeedbackText.textContent = feedback;
+
+  // Hero background color
+  dom.resultHero.style.background = goodPct >= 75 ? "var(--green-light)"
+    : goodPct >= 50 ? "var(--blue-light)" : "var(--amber-light)";
+
+  showScreen("results");
 }
 
 function setFeedback(type, icon, main, sub) {

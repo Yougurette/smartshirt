@@ -198,6 +198,58 @@
         </button>
       </section>
 
+      <!-- ── SCREEN: Results ───────────────────────────────────────── -->
+      <section class="screen" id="screen-results" hidden>
+        <div class="result-hero" id="result-hero">
+          <div class="result-grade-icon" id="result-grade-icon">✅</div>
+          <h2 id="result-title">Ausgezeichnet!</h2>
+          <p class="result-subtitle" id="result-subtitle">Workout abgeschlossen</p>
+        </div>
+
+        <div class="result-card">
+          <h3 class="result-card-title">Symmetrie Links / Rechts</h3>
+          <div class="symm-rows">
+            <div class="symm-row">
+              <span class="symm-label">Links</span>
+              <div class="symm-track"><div class="symm-bar symm-left" id="bar-left"></div></div>
+              <span class="symm-pct" id="val-left">–</span>
+            </div>
+            <div class="symm-row">
+              <span class="symm-label">Rechts</span>
+              <div class="symm-track"><div class="symm-bar symm-right" id="bar-right"></div></div>
+              <span class="symm-pct" id="val-right">–</span>
+            </div>
+          </div>
+          <p class="symm-diff-line" id="symm-diff">–</p>
+        </div>
+
+        <div class="result-stats-row">
+          <div class="result-stat-box">
+            <span class="stat-value" id="stat-good">–</span>
+            <span class="stat-label">Perfekte Ausführung</span>
+          </div>
+          <div class="result-stat-box">
+            <span class="stat-value" id="stat-warn">–</span>
+            <span class="stat-label">Korrekturen nötig</span>
+          </div>
+          <div class="result-stat-box">
+            <span class="stat-value" id="stat-stability">–</span>
+            <span class="stat-label">Rücken-Stabilität</span>
+          </div>
+        </div>
+
+        <div class="result-feedback-box" id="result-feedback-box">
+          <p id="result-feedback-text">–</p>
+        </div>
+
+        <button class="btn btn-primary btn-full" id="result-done-btn">
+          Zurück zu Übungen
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+          </svg>
+        </button>
+      </section>
+
       <!-- ── Debug (always at bottom) ───────────────────────────── -->
       <details class="debug-drawer" open>
         <summary>Live-Sensordaten <span class="data-dot" id="data-dot"></span></summary>
