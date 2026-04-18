@@ -11,16 +11,28 @@ Workout-orientierter Thesis-Prototyp mit 2 Übungen:
 2. Kalibrierung: Standing + Prone
 3. Optimum-Aufnahme je Übung
 4. Live Coaching mit intuitivem Hinweis statt Zahlen
-5. Übungsbilder direkt in der App
+5. Übungsbilder direkt in der App (2 Frames pro Übung)
+6. Mini-Video-Effekt: die 2 Frames werden automatisch gewechselt
 
 ## Dateien
 
 - `index.html`: UI inkl. Übungs-Karten und Illustration
-- `app.js`: Serial + BLE Datenempfang, Kalibrierung, Optimum, Feedback
+- `app.js`: Serial + BLE Datenempfang, Kalibrierung, Optimum, Feedback + Frame-Animation
 - `styles.css`: workout-app Look
-- `assets/frontal-raise.svg`: Illustration Frontal Raise
-- `assets/side-to-side.svg`: Illustration Side-to-side
+- `assets/frontal-raise.svg`: Illustration Frontal Raise (Frame 1)
+- `assets/frontal-raise-frame2.svg`: Illustration Frontal Raise (Frame 2)
+- `assets/side-to-side.svg`: Illustration Side-to-side (Frame 1)
+- `assets/side-to-side-frame2.svg`: Illustration Side-to-side (Frame 2)
 - `firmware/smartshirt_capture.ino`: ESP32 Firmware (Flex + MPU6050 + BLE Notify)
+
+## Eigene Bilder (deine Referenzbilder) einsetzen
+
+Wenn du stattdessen deine echten Übungsbilder nutzen willst, ersetze einfach diese Dateien:
+
+- `assets/frontal-raise.svg` und `assets/frontal-raise-frame2.svg`
+- `assets/side-to-side.svg` und `assets/side-to-side-frame2.svg`
+
+Du kannst auch PNG/JPG nutzen und nur die Dateinamen in `app.js` unter `EXERCISE_META.frames` anpassen.
 
 ## ESP32 Datenformat
 

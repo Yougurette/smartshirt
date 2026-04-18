@@ -133,3 +133,14 @@ pre {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+
+
+#video-mode-status {
+  display: block;
+  margin-top: 0.25rem;
+  color: #6c6589;
+}
+
+#exercise-image {
+  transition: opacity 220ms ease-in-out;
+}

@@ -4,11 +4,11 @@ const BLE_UART_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // device -> app not
 const EXERCISE_META = {
   frontal: {
     title: "🧍 Frontal Raise: beide Arme kontrolliert nach oben führen",
-    image: "assets/frontal-raise.svg",
+    frames: ["assets/frontal-raise.svg", "assets/frontal-raise-frame2.svg"],
   },
   side: {
     title: "🤸 Side-to-side: in Bauchlage gleichmäßig links/rechts bewegen",
-    image: "assets/side-to-side.svg",
+    frames: ["assets/side-to-side.svg", "assets/side-to-side-frame2.svg"],
   },
 };
 
@@ -22,6 +22,8 @@ const state = {
   bleBuffer: "",
   mockTimer: null,
   latest: null,
+  videoTimer: null,
+  videoFrameIndex: 0,
   calibration: {
     standing: null,
     prone: null,
@@ -156,6 +158,7 @@ function startWorkout(exercise) {
 
 function stopWorkout() {
   state.activeWorkout = null;
+  stopExerciseVideo();
   els.hintText.textContent = "Workout gestoppt.";
   els.qualityText.textContent = "Bereit für die nächste Runde.";
 }
@@ -163,8 +166,23 @@ function stopWorkout() {
 function setExerciseVisual(exercise) {
   const meta = EXERCISE_META[exercise];
   if (!meta) return;
-  els.exerciseImage.src = meta.image;
+
+  stopExerciseVideo();
+  state.videoFrameIndex = 0;
+  els.exerciseImage.src = meta.frames[0];
   els.exerciseTitle.textContent = meta.title;
+
+  state.videoTimer = setInterval(() => {
+    state.videoFrameIndex = (state.videoFrameIndex + 1) % meta.frames.length;
+    els.exerciseImage.src = meta.frames[state.videoFrameIndex];
+  }, 900);
+}
+
+function stopExerciseVideo() {
+  if (state.videoTimer) {
+    clearInterval(state.videoTimer);
+    state.videoTimer = null;
+  }
 }
 
 function summarize(samples) {
