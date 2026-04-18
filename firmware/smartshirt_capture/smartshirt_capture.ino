@@ -18,8 +18,8 @@
 #include <BLE2902.h>
 
 // ── WiFi Zugangsdaten  ←  HIER ANPASSEN ─────────────────────────
-const char* WIFI_SSID = "DEIN_WLAN_NAME";
-const char* WIFI_PASS = "DEIN_WLAN_PASSWORT";
+const char* WIFI_SSID = "WN-7A8150";
+const char* WIFI_PASS = "jwuhkstu";
 // ────────────────────────────────────────────────────────────────
 
 // ── Pins ─────────────────────────────────────────────────────────
