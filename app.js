@@ -1,468 +1,523 @@
-const BLE_UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const BLE_UART_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // device -> app notify
+// ── BLE Profile ──────────────────────────────────────────────────
+const BLE_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const BLE_TX_CHAR = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
-const EXERCISE_META = {
+// ── Exercise Catalogue ───────────────────────────────────────────
+const EXERCISES = {
   frontal: {
-    title: "🧍 Frontal Raise: beide Arme kontrolliert nach oben führen",
-    mediaCandidates: [
-      "assets/3eGE2JC.gif",
-      "assets/3eGE2JC.png",
-      "assets/3eGE2JC.webp",
-      "assets/3eGE2JC.jpg",
-      "assets/3eGE2JC.jpeg",
-    ],
+    title: "Frontal Raise",
+    desc:  "Beide Arme gleichmäßig nach vorne und oben heben. Rücken gerade halten.",
+    image: "assets/frontal-raise.svg",
     frames: ["assets/frontal-raise.svg", "assets/frontal-raise-frame2.svg"],
   },
-  side: {
-    title: "🤸 Side-to-side: in Bauchlage gleichmäßig links/rechts bewegen",
-    mediaCandidates: [
-      "assets/6sYyrRX.gif",
-      "assets/6sYyrRX.png",
-      "assets/6sYyrRX.webp",
-      "assets/6sYyrRX.jpg",
-      "assets/6sYyrRX.jpeg",
-    ],
-    frames: ["assets/side-to-side.svg", "assets/side-to-side-frame2.svg"],
-  },
 };
 
+// ── App State ────────────────────────────────────────────────────
 const state = {
-  connected: false,
-  source: null,
-  serialPort: null,
-  reader: null,
-  bleDevice: null,
-  bleChar: null,
-  bleBuffer: "",
-  mockTimer: null,
-  latest: null,
-  videoTimer: null,
-  videoFrameIndex: 0,
-  calibration: {
-    standing: null,
-    prone: null,
-  },
-  optimum: {
-    frontal: null,
-    side: null,
-  },
-  captureBuffer: {
-    frontal: [],
-    side: [],
-  },
+  // connection
+  connected:     false,
+  source:        null,     // "ble" | "serial" | "mock"
+  serialPort:    null,
+  reader:        null,
+  bleDevice:     null,
+  bleChar:       null,
+  bleBuffer:     "",
+  mockTimer:     null,
+  latest:        null,
+
+  // calibration (saved to localStorage)
+  calibration:   null,     // { standing, prone }
+
+  // optimum per exercise (saved to localStorage)
+  optimum:       {},       // { frontal: { leftFlex, rightFlex, ay, gxAbs } }
+
+  // optimum recording
+  activeExercise: null,
+  isRecording:   false,
+  recBuffer:     [],
+
+  // workout
   activeWorkout: null,
+  workoutBuffer: [],
+
+  // animation
+  videoTimer:    null,
+  videoFrame:    0,
 };
 
-const els = {
-  connectSerial: document.getElementById("connect-serial"),
-  connectBle: document.getElementById("connect-ble"),
-  toggleMock: document.getElementById("toggle-mock"),
-  connectionStatus: document.getElementById("connection-status"),
-  calStand: document.getElementById("cal-stand"),
-  calProne: document.getElementById("cal-prone"),
-  calibrationStatus: document.getElementById("calibration-status"),
-  optimumStatus: document.getElementById("optimum-status"),
-  liveData: document.getElementById("live-data"),
-  hintText: document.getElementById("hint-text"),
-  qualityText: document.getElementById("quality-text"),
-  exerciseImage: document.getElementById("exercise-image"),
-  exerciseTitle: document.getElementById("exercise-title"),
-  stopWorkout: document.getElementById("stop-workout"),
+// ── DOM shorthand ────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const dom = {
+  topbarBack:        $("topbar-back"),
+  topbarTitle:       $("topbar-title"),
+  connDot:           $("conn-dot"),
+  // connect
+  connectBle:        $("connect-ble"),
+  connectSerial:     $("connect-serial"),
+  toggleMock:        $("toggle-mock"),
+  connectionStatus:  $("connection-status"),
+  // calibration
+  calStand:          $("cal-stand"),
+  calStandOk:        $("cal-stand-ok"),
+  calProne:          $("cal-prone"),
+  calProneOk:        $("cal-prone-ok"),
+  calDone:           $("cal-done"),
+  stepChip1:         $("step-chip-1"),
+  stepChip2:         $("step-chip-2"),
+  // exercises
+  exCardFrontal:     $("ex-card-frontal"),
+  optimumChipFrontal:$("optimum-chip-frontal"),
+  recalibrateBtn:    $("recalibrate-btn"),
+  // detail
+  detailImage:       $("detail-image"),
+  detailTitle:       $("detail-title"),
+  detailDesc:        $("detail-desc"),
+  detailOptimumChip: $("detail-optimum-chip"),
+  optimumHint:       $("optimum-hint"),
+  optimumRecordBtn:  $("optimum-record-btn"),
+  optimumSaveBtn:    $("optimum-save-btn"),
+  recordInfo:        $("record-info"),
+  startWorkoutBtn:   $("start-workout-btn"),
+  // workout
+  exerciseImage:     $("exercise-image"),
+  workoutName:       $("workout-name"),
+  feedbackCard:      $("feedback-card"),
+  feedbackIcon:      $("feedback-icon"),
+  hintText:          $("hint-text"),
+  qualityText:       $("quality-text"),
+  stopWorkout:       $("stop-workout"),
+  // debug
+  liveData:          $("live-data"),
 };
 
-document.querySelectorAll("[data-capture]").forEach((btn) => {
-  btn.addEventListener("click", () => saveOptimum(btn.dataset.capture));
-});
+// ── Screen Router ────────────────────────────────────────────────
+const SCREENS = ["connect", "calibrate", "exercises", "detail", "workout"];
 
-document.querySelectorAll("[data-workout]").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    setExerciseVisual(btn.dataset.workout);
-    startWorkout(btn.dataset.workout);
+const SCREEN_META = {
+  connect:   { title: "SmartShirt Physio", back: null },
+  calibrate: { title: "Kalibrierung",       back: null },   // no escape from calibration
+  exercises: { title: "Übungen",            back: null },
+  detail:    { title: "Übung",              back: "exercises" },
+  workout:   { title: "Workout",            back: null },    // handled by stop button
+};
+
+function showScreen(name) {
+  SCREENS.forEach(s => {
+    const el = $(`screen-${s}`);
+    if (el) {
+      el.hidden = s !== name;
+      if (s === name) {
+        // re-trigger animation
+        el.style.animation = "none";
+        el.offsetHeight; // reflow
+        el.style.animation = "";
+      }
+    }
   });
-});
 
-els.connectSerial.addEventListener("click", connectSerial);
-els.connectBle.addEventListener("click", connectBle);
-els.toggleMock.addEventListener("click", toggleMockData);
-els.calStand.addEventListener("click", () => saveCalibration("standing"));
-els.calProne.addEventListener("click", () => saveCalibration("prone"));
-els.stopWorkout.addEventListener("click", stopWorkout);
+  const meta = SCREEN_META[name] ?? {};
+  dom.topbarTitle.textContent = meta.title ?? "SmartShirt";
 
-function parseLine(line) {
-  const out = {};
-  line.split(",").forEach((pair) => {
-    const [k, v] = pair.split(":");
-    if (k && v) out[k.trim().toLowerCase()] = Number(v.trim());
-  });
-
-  if (
-    Number.isFinite(out.l) &&
-    Number.isFinite(out.r) &&
-    Number.isFinite(out.ax) &&
-    Number.isFinite(out.ay) &&
-    Number.isFinite(out.az)
-  ) {
-    return {
-      leftFlex: out.l,
-      rightFlex: out.r,
-      ax: out.ax,
-      ay: out.ay,
-      az: out.az,
-      gx: out.gx ?? 0,
-      gy: out.gy ?? 0,
-      gz: out.gz ?? 0,
-      ts: Date.now(),
+  if (meta.back) {
+    dom.topbarBack.hidden = false;
+    dom.topbarBack.onclick = () => {
+      if (name === "workout") stopWorkout();
+      else showScreen(meta.back);
     };
-  }
-
-  return null;
-}
-
-function handleSample(sample) {
-  state.latest = sample;
-  els.liveData.textContent = JSON.stringify(sample, null, 2);
-
-  if (state.activeWorkout) {
-    state.captureBuffer[state.activeWorkout].push(sample);
-    if (state.captureBuffer[state.activeWorkout].length > 120) {
-      state.captureBuffer[state.activeWorkout].shift();
-    }
-    updateFeedback();
-  }
-}
-
-function saveCalibration(mode) {
-  if (!state.latest) return;
-  state.calibration[mode] = state.latest;
-
-  const standingOk = !!state.calibration.standing;
-  const proneOk = !!state.calibration.prone;
-
-  if (standingOk && proneOk) {
-    els.calibrationStatus.textContent = "Kalibrierung abgeschlossen ✅";
   } else {
-    els.calibrationStatus.textContent = "Kalibrierung teilweise gespeichert ...";
+    dom.topbarBack.hidden = true;
+    dom.topbarBack.onclick = null;
   }
 }
 
-function saveOptimum(exercise) {
-  const data = state.captureBuffer[exercise];
-  if (!data.length) {
-    els.optimumStatus.textContent = `Für ${exercise} noch keine Bewegungsdaten vorhanden.`;
-    return;
-  }
+// ── Connection ───────────────────────────────────────────────────
+dom.connectBle.addEventListener("click", connectBle);
+dom.connectSerial.addEventListener("click", connectSerial);
+dom.toggleMock.addEventListener("click", toggleMock);
 
-  state.optimum[exercise] = summarize(data);
-  localStorage.setItem("smartshirt.optimum", JSON.stringify(state.optimum));
-  els.optimumStatus.textContent = `Optimum für ${exercise} gespeichert ✅`;
-}
+function onConnected(source) {
+  state.connected = true;
+  state.source = source;
+  const labels = { ble: "BLE", serial: "USB", mock: "Demo" };
+  dom.connectionStatus.textContent = `Verbunden via ${labels[source] ?? source} ✓`;
+  dom.connDot.className = `conn-dot ${source === "mock" ? "mock" : "on"}`;
 
-function startWorkout(exercise) {
-  if (!state.optimum[exercise]) {
-    els.hintText.textContent = "Erst Optimum aufnehmen, dann Workout starten.";
-    return;
-  }
-
-  state.activeWorkout = exercise;
-  state.captureBuffer[exercise] = [];
-  setExerciseVisual(exercise);
-  els.hintText.textContent = "Workout läuft ...";
-  els.qualityText.textContent = "Ich beobachte deine Symmetrie.";
-}
-
-function stopWorkout() {
-  state.activeWorkout = null;
-  stopExerciseVideo();
-  els.hintText.textContent = "Workout gestoppt.";
-  els.qualityText.textContent = "Bereit für die nächste Runde.";
-}
-
-function setExerciseVisual(exercise) {
-  const meta = EXERCISE_META[exercise];
-  if (!meta) return;
-
-  stopExerciseVideo();
-  state.videoFrameIndex = 0;
-  els.exerciseTitle.textContent = meta.title;
-  startExerciseMedia(meta);
-}
-
-function stopExerciseVideo() {
-  if (state.videoTimer) {
-    clearInterval(state.videoTimer);
-    state.videoTimer = null;
-  }
-}
-
-function startExerciseMedia(meta) {
-  // Verwende exakt benannte Medien-Dateien (GIF/PNG/JPG/WEBP), falls vorhanden.
-  // Wenn keine gefunden wird, fallback auf 2-Frame-Animation.
-  const candidates = meta.mediaCandidates || [];
-  if (candidates.length) {
-    tryMediaCandidates(candidates, () => startFrameAnimation(meta.frames));
-    return;
-  }
-
-  startFrameAnimation(meta.frames);
-}
-
-function tryMediaCandidates(candidates, onExhausted) {
-  let index = 0;
-
-  const tryNext = () => {
-    if (index >= candidates.length) {
-      els.exerciseImage.onerror = null;
-      onExhausted();
-      return;
-    }
-
-    const src = candidates[index++];
-    els.exerciseImage.onerror = tryNext;
-    els.exerciseImage.src = src;
-  };
-
-  tryNext();
-}
-
-function startFrameAnimation(frames) {
-  els.exerciseImage.src = frames[0];
-  state.videoTimer = setInterval(() => {
-    state.videoFrameIndex = (state.videoFrameIndex + 1) % frames.length;
-    els.exerciseImage.src = frames[state.videoFrameIndex];
-  }, 900);
-}
-
-function summarize(samples) {
-  const sum = samples.reduce(
-    (acc, s) => {
-      acc.left += s.leftFlex;
-      acc.right += s.rightFlex;
-      acc.ay += s.ay;
-      acc.gx += Math.abs(s.gx);
-      return acc;
-    },
-    { left: 0, right: 0, ay: 0, gx: 0 }
-  );
-
-  return {
-    leftFlex: sum.left / samples.length,
-    rightFlex: sum.right / samples.length,
-    ay: sum.ay / samples.length,
-    gxAbs: sum.gx / samples.length,
-  };
-}
-
-function updateFeedback() {
-  const exercise = state.activeWorkout;
-  const buffer = state.captureBuffer[exercise];
-  if (buffer.length < 15) return;
-
-  const current = summarize(buffer);
-  const target = state.optimum[exercise];
-
-  if (exercise === "frontal") {
-    const leftDelta = current.leftFlex - target.leftFlex;
-    const rightDelta = current.rightFlex - target.rightFlex;
-    const symmetry = Math.abs(leftDelta - rightDelta);
-
-    if (symmetry < 90) {
-      setFeedback("✅ Sehr gut, beide Seiten sind ausgeglichen.", "Stabile Ausführung.", true);
-    } else if (leftDelta > rightDelta) {
-      setFeedback("↗ Versuch den rechten Arm etwas höher zu nehmen.", "Links dominiert gerade.", false);
-    } else {
-      setFeedback("↖ Versuch den linken Arm etwas höher zu nehmen.", "Rechts dominiert gerade.", false);
-    }
-    return;
-  }
-
-  const sideBias = current.ay - target.ay;
-  if (Math.abs(sideBias) < 700) {
-    setFeedback("✅ Schön gleichmäßig links/rechts.", "Gute Balance in Bauchlage.", true);
+  if (!state.calibration) {
+    showScreen("calibrate");
   } else {
-    setFeedback("↔ Ich sehe gerade eine Seite stärker. Geh bewusst auch zur anderen Seite.", "Asymmetrie erkannt.", false);
-  }
-}
-
-function setFeedback(hint, quality, isGood) {
-  els.hintText.textContent = hint;
-  els.qualityText.textContent = quality;
-  els.hintText.classList.toggle("good", isGood);
-  els.hintText.classList.toggle("warn", !isGood);
-}
-
-async function connectSerial() {
-  if (!("serial" in navigator)) {
-    els.connectionStatus.textContent = "Web Serial wird im aktuellen Browser nicht unterstützt.";
-    return;
-  }
-
-  await disconnectSource();
-
-  try {
-    state.serialPort = await navigator.serial.requestPort();
-    await state.serialPort.open({ baudRate: 115200 });
-    state.connected = true;
-    state.source = "serial";
-    els.connectionStatus.textContent = "ESP32 via Serial verbunden ✅";
-    readSerialLoop();
-  } catch (err) {
-    els.connectionStatus.textContent = `Serial fehlgeschlagen: ${err.message}`;
+    showScreen("exercises");
   }
 }
 
 async function connectBle() {
   if (!("bluetooth" in navigator)) {
-    els.connectionStatus.textContent = "Web Bluetooth ist im aktuellen Browser nicht verfügbar.";
+    dom.connectionStatus.textContent = "Web Bluetooth ist in diesem Browser nicht verfügbar (Chrome empfohlen).";
     return;
   }
-
-  await disconnectSource();
-
+  await cleanupConnection();
+  dom.connectionStatus.textContent = "Suche SmartShirt-ESP32 …";
   try {
-    // 1) Primär: strikt nach Service filtern
-    // 2) Fallback: nach Gerätename suchen (hilft wenn Service nicht korrekt advertised wird)
-    // 3) Letzter Fallback: alle BLE Geräte zulassen
-    try {
-      state.bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [BLE_UART_SERVICE] }],
-        optionalServices: [BLE_UART_SERVICE],
-      });
-    } catch {
-      try {
-        state.bleDevice = await navigator.bluetooth.requestDevice({
-          filters: [{ namePrefix: "SmartShirt" }, { namePrefix: "ESP32" }],
-          optionalServices: [BLE_UART_SERVICE],
-        });
-      } catch {
-        state.bleDevice = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [BLE_UART_SERVICE],
-        });
-      }
+    let device;
+    // try strict filter first, fall back to name prefix, then accept-all
+    for (const opts of [
+      { filters: [{ services: [BLE_SERVICE] }], optionalServices: [BLE_SERVICE] },
+      { filters: [{ namePrefix: "SmartShirt" }, { namePrefix: "ESP32" }], optionalServices: [BLE_SERVICE] },
+      { acceptAllDevices: true, optionalServices: [BLE_SERVICE] },
+    ]) {
+      try { device = await navigator.bluetooth.requestDevice(opts); break; } catch { /* try next */ }
     }
+    if (!device) throw new Error("Kein Gerät ausgewählt.");
 
-    const server = await state.bleDevice.gatt.connect();
-    const service = await server.getPrimaryService(BLE_UART_SERVICE);
-    state.bleChar = await service.getCharacteristic(BLE_UART_TX);
-
+    state.bleDevice = device;
+    const server  = await device.gatt.connect();
+    const service = await server.getPrimaryService(BLE_SERVICE);
+    state.bleChar  = await service.getCharacteristic(BLE_TX_CHAR);
     await state.bleChar.startNotifications();
     state.bleChar.addEventListener("characteristicvaluechanged", onBleData);
-
-    state.connected = true;
-    state.source = "ble";
-    els.connectionStatus.textContent = "ESP32 via BLE verbunden ✅";
+    onConnected("ble");
   } catch (err) {
-    els.connectionStatus.textContent =
-      `BLE fehlgeschlagen: ${err.message}. ` +
-      "Tipp: Firmware neu flashen, Board neu starten, und Chrome auf localhost/127.0.0.1 nutzen.";
+    dom.connectionStatus.textContent = `Bluetooth Fehler: ${err.message}`;
+  }
+}
+
+async function connectSerial() {
+  if (!("serial" in navigator)) {
+    dom.connectionStatus.textContent = "Web Serial nicht verfügbar — nutze Chrome oder Edge.";
+    return;
+  }
+  await cleanupConnection();
+  try {
+    state.serialPort = await navigator.serial.requestPort();
+    await state.serialPort.open({ baudRate: 115200 });
+    onConnected("serial");
+    readSerialLoop();
+  } catch (err) {
+    dom.connectionStatus.textContent = `USB Fehler: ${err.message}`;
+  }
+}
+
+function toggleMock() {
+  if (state.mockTimer) {
+    clearInterval(state.mockTimer);
+    state.mockTimer = null;
+    dom.connectionStatus.textContent = "Demo gestoppt.";
+    dom.connDot.className = "conn-dot";
+    state.connected = false;
+    state.source = null;
+    if (state.activeWorkout) stopWorkout();
+    showScreen("connect");
+    return;
+  }
+  let t = 0;
+  state.mockTimer = setInterval(() => {
+    t += 0.12;
+    handleSample({
+      leftFlex:  1700 + Math.sin(t) * 260 + Math.random() * 30,
+      rightFlex: 1700 + Math.sin(t + 0.2) * 260 + Math.random() * 30,
+      ax:  Math.sin(t) * 400,
+      ay:  Math.sin(t * 0.7) * 2400,
+      az:  16384,
+      gx:  Math.sin(t * 1.3) * 75,
+      gy:  Math.cos(t) * 45,
+      gz:  8,
+      ts:  Date.now(),
+    });
+  }, 100);
+  onConnected("mock");
+}
+
+async function cleanupConnection() {
+  state.connected = false;
+  if (state.mockTimer)  { clearInterval(state.mockTimer); state.mockTimer = null; }
+  if (state.reader)     { try { await state.reader.cancel(); } catch {} state.reader = null; }
+  if (state.serialPort) { try { await state.serialPort.close(); } catch {} state.serialPort = null; }
+  if (state.bleChar) {
+    try { await state.bleChar.stopNotifications(); state.bleChar.removeEventListener("characteristicvaluechanged", onBleData); } catch {}
+    state.bleChar = null;
+  }
+  if (state.bleDevice?.gatt?.connected) state.bleDevice.gatt.disconnect();
+  state.bleDevice = null;
+}
+
+// ── Data Ingestion ───────────────────────────────────────────────
+function parseLine(line) {
+  const out = {};
+  line.split(",").forEach(pair => {
+    const [k, v] = pair.split(":");
+    if (k && v !== undefined) out[k.trim().toLowerCase()] = Number(v.trim());
+  });
+  if (!Number.isFinite(out.l) || !Number.isFinite(out.ax)) return null;
+  return {
+    leftFlex: out.l, rightFlex: out.r ?? 0,
+    ax: out.ax, ay: out.ay ?? 0, az: out.az ?? 0,
+    gx: out.gx ?? 0, gy: out.gy ?? 0, gz: out.gz ?? 0,
+    ts: Date.now(),
+  };
+}
+
+function handleSample(sample) {
+  state.latest = sample;
+  dom.liveData.textContent = JSON.stringify(sample, null, 2);
+
+  if (state.isRecording) {
+    state.recBuffer.push(sample);
+    dom.recordInfo.textContent = `${state.recBuffer.length} Datenpunkte aufgezeichnet …`;
+  }
+
+  if (state.activeWorkout) {
+    state.workoutBuffer.push(sample);
+    if (state.workoutBuffer.length > 150) state.workoutBuffer.shift();
+    updateFeedback();
   }
 }
 
 function onBleData(event) {
-  const value = new TextDecoder().decode(event.target.value);
-  state.bleBuffer += value;
+  state.bleBuffer += new TextDecoder().decode(event.target.value);
   const lines = state.bleBuffer.split("\n");
-  state.bleBuffer = lines.pop() || "";
-  for (const line of lines) {
-    const sample = parseLine(line.trim());
-    if (sample) handleSample(sample);
-  }
-}
-
-async function disconnectSource() {
-  state.connected = false;
-
-  if (state.reader) {
-    try {
-      await state.reader.cancel();
-    } catch {
-      // ignore
-    }
-    state.reader = null;
-  }
-
-  if (state.serialPort) {
-    try {
-      await state.serialPort.close();
-    } catch {
-      // ignore
-    }
-    state.serialPort = null;
-  }
-
-  if (state.bleChar) {
-    try {
-      await state.bleChar.stopNotifications();
-      state.bleChar.removeEventListener("characteristicvaluechanged", onBleData);
-    } catch {
-      // ignore
-    }
-    state.bleChar = null;
-  }
-
-  if (state.bleDevice?.gatt?.connected) {
-    state.bleDevice.gatt.disconnect();
-  }
-  state.bleDevice = null;
+  state.bleBuffer = lines.pop() ?? "";
+  lines.forEach(l => { const s = parseLine(l.trim()); if (s) handleSample(s); });
 }
 
 async function readSerialLoop() {
   const decoder = new TextDecoderStream();
   state.serialPort.readable.pipeTo(decoder.writable);
-  const inputStream = decoder.readable;
-  const reader = inputStream.getReader();
-  state.reader = reader;
-
-  let buffer = "";
+  const reader = decoder.readable.getReader();
+  state.reader  = reader;
+  let buf = "";
   while (state.connected && state.source === "serial") {
     const { value, done } = await reader.read();
     if (done) break;
-    buffer += value;
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      const sample = parseLine(line.trim());
-      if (sample) handleSample(sample);
-    }
+    buf += value;
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    lines.forEach(l => { const s = parseLine(l.trim()); if (s) handleSample(s); });
   }
 }
 
-function toggleMockData() {
-  if (state.mockTimer) {
-    clearInterval(state.mockTimer);
-    state.mockTimer = null;
-    els.connectionStatus.textContent = "Mockdaten gestoppt.";
+// ── Calibration ──────────────────────────────────────────────────
+let _calStanding = null;
+let _calProne    = null;
+
+dom.calStand.addEventListener("click", () => {
+  if (!state.latest) { dom.calStandOk.textContent = "Noch keine Sensordaten — kurz warten."; dom.calStandOk.hidden = false; return; }
+  _calStanding = { ...state.latest };
+  dom.calStandOk.textContent = "✅ Gespeichert";
+  dom.calStandOk.hidden = false;
+  dom.calStand.disabled = true;
+  dom.stepChip1.classList.add("done");
+  checkCalReady();
+});
+
+dom.calProne.addEventListener("click", () => {
+  if (!state.latest) { dom.calProneOk.textContent = "Noch keine Sensordaten — kurz warten."; dom.calProneOk.hidden = false; return; }
+  _calProne = { ...state.latest };
+  dom.calProneOk.textContent = "✅ Gespeichert";
+  dom.calProneOk.hidden = false;
+  dom.calProne.disabled = true;
+  dom.stepChip2.classList.add("done");
+  checkCalReady();
+});
+
+function checkCalReady() {
+  if (_calStanding && _calProne) dom.calDone.disabled = false;
+}
+
+dom.calDone.addEventListener("click", () => {
+  state.calibration = { standing: _calStanding, prone: _calProne };
+  localStorage.setItem("smartshirt.calibration", JSON.stringify(state.calibration));
+  showScreen("exercises");
+});
+
+dom.recalibrateBtn.addEventListener("click", () => {
+  _calStanding = null; _calProne = null;
+  dom.calStand.disabled  = false; dom.calStand.textContent  = "Position jetzt speichern";
+  dom.calProne.disabled  = false; dom.calProne.textContent  = "Position jetzt speichern";
+  dom.calStandOk.hidden  = true;
+  dom.calProneOk.hidden  = true;
+  dom.calDone.disabled   = true;
+  dom.stepChip1.classList.remove("done");
+  dom.stepChip2.classList.remove("done");
+  showScreen("calibrate");
+});
+
+// ── Exercise Selection ───────────────────────────────────────────
+dom.exCardFrontal.addEventListener("click", () => openExercise("frontal"));
+
+function openExercise(id) {
+  state.activeExercise = id;
+  const ex = EXERCISES[id];
+  dom.detailImage.src    = ex.image;
+  dom.detailTitle.textContent = ex.title;
+  dom.detailDesc.textContent  = ex.desc;
+  refreshDetailUI(id);
+  showScreen("detail");
+}
+
+function refreshDetailUI(id) {
+  const has = !!state.optimum[id];
+
+  dom.detailOptimumChip.textContent  = has ? "✅ Aufgenommen" : "Nicht aufgenommen";
+  dom.detailOptimumChip.className    = `status-chip${has ? " done" : ""}`;
+  dom.optimumHint.textContent        = has
+    ? "Optimum ist gespeichert. Du kannst es jederzeit neu aufnehmen."
+    : "Führe die Übung einmal perfekt aus und nimm sie als Referenz auf.";
+  dom.startWorkoutBtn.disabled = !has;
+
+  const chip = $(`optimum-chip-${id}`);
+  if (chip) {
+    chip.textContent = has ? "✅ Bereit für Workout" : "Optimum aufnehmen";
+    chip.className   = `optimum-chip${has ? " ready" : ""}`;
+  }
+}
+
+// ── Optimum Recording ────────────────────────────────────────────
+dom.optimumRecordBtn.addEventListener("click", () => {
+  if (!state.isRecording) {
+    // Start recording
+    state.isRecording = true;
+    state.recBuffer   = [];
+    dom.optimumRecordBtn.innerHTML = '<span class="rec-dot"></span> Aufnahme stoppen';
+    dom.optimumRecordBtn.classList.add("active");
+    dom.optimumSaveBtn.hidden = true;
+    dom.recordInfo.textContent = "Aufnahme läuft …";
+  } else {
+    // Stop recording
+    state.isRecording = false;
+    dom.optimumRecordBtn.innerHTML = '<span class="rec-dot"></span> Aufnahme starten';
+    dom.optimumRecordBtn.classList.remove("active");
+
+    if (state.recBuffer.length >= 10) {
+      dom.recordInfo.textContent = `${state.recBuffer.length} Datenpunkte aufgezeichnet — jetzt speichern.`;
+      dom.optimumSaveBtn.hidden  = false;
+    } else {
+      dom.recordInfo.textContent = "Zu wenig Daten — bitte erneut versuchen.";
+    }
+  }
+});
+
+dom.optimumSaveBtn.addEventListener("click", () => {
+  const id = state.activeExercise;
+  if (!state.recBuffer.length) return;
+  state.optimum[id] = summarize(state.recBuffer);
+  localStorage.setItem("smartshirt.optimum", JSON.stringify(state.optimum));
+  dom.optimumSaveBtn.hidden  = true;
+  dom.recordInfo.textContent = "✅ Optimum gespeichert!";
+  refreshDetailUI(id);
+});
+
+// ── Workout ──────────────────────────────────────────────────────
+dom.startWorkoutBtn.addEventListener("click", () => {
+  const id = state.activeExercise;
+  if (!state.optimum[id]) return;
+  state.activeWorkout  = id;
+  state.workoutBuffer  = [];
+
+  const ex = EXERCISES[id];
+  dom.exerciseImage.src       = ex.frames[0];
+  dom.workoutName.textContent = ex.title;
+
+  startFrameAnimation(ex.frames);
+  setFeedback("neutral", "⏳", "Workout läuft — mach los!", "Sammle Daten …");
+  showScreen("workout");
+});
+
+dom.stopWorkout.addEventListener("click", stopWorkout);
+
+function stopWorkout() {
+  state.activeWorkout = null;
+  stopFrameAnimation();
+  showScreen("exercises");
+}
+
+function startFrameAnimation(frames) {
+  stopFrameAnimation();
+  state.videoFrame = 0;
+  state.videoTimer = setInterval(() => {
+    state.videoFrame = (state.videoFrame + 1) % frames.length;
+    dom.exerciseImage.src = frames[state.videoFrame];
+  }, 900);
+}
+
+function stopFrameAnimation() {
+  if (state.videoTimer) { clearInterval(state.videoTimer); state.videoTimer = null; }
+}
+
+// ── Feedback Engine ──────────────────────────────────────────────
+function summarize(samples) {
+  const n = samples.length;
+  const acc = samples.reduce((a, s) => ({
+    leftFlex:  a.leftFlex  + s.leftFlex,
+    rightFlex: a.rightFlex + s.rightFlex,
+    ay:        a.ay        + s.ay,
+    gxAbs:     a.gxAbs     + Math.abs(s.gx),
+  }), { leftFlex: 0, rightFlex: 0, ay: 0, gxAbs: 0 });
+  return { leftFlex: acc.leftFlex/n, rightFlex: acc.rightFlex/n, ay: acc.ay/n, gxAbs: acc.gxAbs/n };
+}
+
+function updateFeedback() {
+  const buf = state.workoutBuffer;
+  if (buf.length < 15) return;
+  const current = summarize(buf.slice(-30));
+  const target  = state.optimum[state.activeWorkout];
+  if (state.activeWorkout === "frontal") evaluateFrontalRaise(current, target);
+}
+
+function evaluateFrontalRaise(cur, tgt) {
+  // Back stability: excessive forward/back rocking
+  if (cur.gxAbs > tgt.gxAbs * 2.5 + 150) {
+    setFeedback("warn", "⚠️",
+      "Rücken stabilisieren — weniger vor und zurück schwingen.",
+      "Körperspannung aufbauen");
     return;
   }
 
-  let t = 0;
-  state.mockTimer = setInterval(() => {
-    t += 0.1;
-    const sample = {
-      leftFlex: 1700 + Math.sin(t) * 250 + Math.random() * 40,
-      rightFlex: 1700 + Math.sin(t + 0.3) * 250 + Math.random() * 40,
-      ax: Math.sin(t) * 400,
-      ay: Math.sin(t * 0.7) * 2500,
-      az: 16384,
-      gx: Math.sin(t * 1.3) * 90,
-      gy: Math.cos(t) * 60,
-      gz: 10,
-      ts: Date.now(),
-    };
-    handleSample(sample);
-  }, 120);
+  const lDelta  = cur.leftFlex  - tgt.leftFlex;
+  const rDelta  = cur.rightFlex - tgt.rightFlex;
+  const asymm   = lDelta - rDelta;  // positive → left higher relative to target
 
-  els.connectionStatus.textContent = "Mockdaten aktiv ✅";
+  // Both arms clearly below target
+  if (lDelta < -150 && rDelta < -150) {
+    setFeedback("warn", "↑",
+      "Beide Arme höher heben — du schöpfst den Bewegungsbereich noch nicht aus.",
+      "Mehr Amplitude");
+    return;
+  }
+
+  if (Math.abs(asymm) < 100) {
+    setFeedback("good", "✅",
+      "Sehr gut! Beide Arme gleichmäßig auf Zielhöhe.",
+      "Perfekte Ausführung");
+  } else if (asymm < -100) {
+    setFeedback("warn", "←",
+      "Linker Arm zu niedrig — hebe ihn auf gleiche Höhe wie rechts.",
+      "Linke Seite stärken");
+  } else {
+    setFeedback("warn", "→",
+      "Rechter Arm zu niedrig — hebe ihn auf gleiche Höhe wie links.",
+      "Rechte Seite stärken");
+  }
 }
 
-(function loadSavedOptimum() {
-  const fromStorage = localStorage.getItem("smartshirt.optimum");
-  if (!fromStorage) return;
+function setFeedback(type, icon, main, sub) {
+  dom.feedbackCard.className   = `feedback-card ${type}`;
+  dom.feedbackIcon.textContent = icon;
+  dom.hintText.textContent     = main;
+  dom.qualityText.textContent  = sub;
+}
+
+// ── Persistence ──────────────────────────────────────────────────
+function loadStorage() {
   try {
-    state.optimum = JSON.parse(fromStorage);
-    els.optimumStatus.textContent = "Vorher gespeicherte Optimum-Daten geladen.";
-  } catch {
-    // ignore invalid cache
-  }
-})();
+    const cal = localStorage.getItem("smartshirt.calibration");
+    if (cal) state.calibration = JSON.parse(cal);
+  } catch {}
+  try {
+    const opt = localStorage.getItem("smartshirt.optimum");
+    if (opt) state.optimum = JSON.parse(opt);
+  } catch {}
+}
+
+// ── Boot ─────────────────────────────────────────────────────────
+loadStorage();
+refreshDetailUI("frontal");   // update chip colours from persisted data
+showScreen("connect");
