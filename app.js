@@ -324,7 +324,7 @@ function handleSample(sample) {
 
   // Zähler auf Kalibrierungsscreen
   if (dom.calCounter) {
-    dom.calCounter.textContent = `✅ ${sampleCount} Datenpunkte empfangen — Sensoren aktiv`;
+    dom.calCounter.textContent = "✅ Sensoren aktiv";
     dom.calCounter.className = "cal-counter ok";
   }
 
