@@ -34,12 +34,12 @@ Wenn du stattdessen deine echten Übungsbilder nutzen willst, ersetze einfach di
 
 Du kannst auch PNG/JPG nutzen und nur die Dateinamen in `app.js` unter `EXERCISE_META.frames` anpassen.
 
-Für echte GIF-Übungsvideos (wie von dir gewünscht) lege diese Dateien in `assets/`:
+Für deine **genauen Übungsmedien** verwende diese Dateinamen in `assets/`:
 
-- `assets/3eGE2JC.gif` → Frontal Raise
-- `assets/6sYyrRX.gif` → Side-to-side
+- `assets/3eGE2JC.gif` oder `assets/3eGE2JC.png` → Frontal Raise
+- `assets/6sYyrRX.gif` oder `assets/6sYyrRX.png` → Side-to-side
 
-Die App nutzt dann automatisch GIF; falls Datei fehlt, wird auf die 2-Frame-Animation zurückgefallen.
+Die App sucht automatisch in dieser Reihenfolge: `gif`, `png`, `webp`, `jpg`, `jpeg`. Falls keine Datei gefunden wird, wird auf die 2-Frame-Animation zurückgefallen.
 
 ## ESP32 Datenformat
 

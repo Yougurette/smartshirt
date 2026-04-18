@@ -4,12 +4,24 @@ const BLE_UART_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // device -> app not
 const EXERCISE_META = {
   frontal: {
     title: "🧍 Frontal Raise: beide Arme kontrolliert nach oben führen",
-    gif: "assets/3eGE2JC.gif",
+    mediaCandidates: [
+      "assets/3eGE2JC.gif",
+      "assets/3eGE2JC.png",
+      "assets/3eGE2JC.webp",
+      "assets/3eGE2JC.jpg",
+      "assets/3eGE2JC.jpeg",
+    ],
     frames: ["assets/frontal-raise.svg", "assets/frontal-raise-frame2.svg"],
   },
   side: {
     title: "🤸 Side-to-side: in Bauchlage gleichmäßig links/rechts bewegen",
-    gif: "assets/6sYyrRX.gif",
+    mediaCandidates: [
+      "assets/6sYyrRX.gif",
+      "assets/6sYyrRX.png",
+      "assets/6sYyrRX.webp",
+      "assets/6sYyrRX.jpg",
+      "assets/6sYyrRX.jpeg",
+    ],
     frames: ["assets/side-to-side.svg", "assets/side-to-side-frame2.svg"],
   },
 };
@@ -183,18 +195,33 @@ function stopExerciseVideo() {
 }
 
 function startExerciseMedia(meta) {
-  // Wenn GIF vorhanden, nutze es als echtes Übungs-Video.
-  // Falls Datei fehlt, fallback auf 2-Frame-Animation.
-  if (meta.gif) {
-    els.exerciseImage.onerror = () => {
-      els.exerciseImage.onerror = null;
-      startFrameAnimation(meta.frames);
-    };
-    els.exerciseImage.src = meta.gif;
+  // Verwende exakt benannte Medien-Dateien (GIF/PNG/JPG/WEBP), falls vorhanden.
+  // Wenn keine gefunden wird, fallback auf 2-Frame-Animation.
+  const candidates = meta.mediaCandidates || [];
+  if (candidates.length) {
+    tryMediaCandidates(candidates, () => startFrameAnimation(meta.frames));
     return;
   }
 
   startFrameAnimation(meta.frames);
+}
+
+function tryMediaCandidates(candidates, onExhausted) {
+  let index = 0;
+
+  const tryNext = () => {
+    if (index >= candidates.length) {
+      els.exerciseImage.onerror = null;
+      onExhausted();
+      return;
+    }
+
+    const src = candidates[index++];
+    els.exerciseImage.onerror = tryNext;
+    els.exerciseImage.src = src;
+  };
+
+  tryNext();
 }
 
 function startFrameAnimation(frames) {
