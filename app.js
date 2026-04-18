@@ -151,32 +151,41 @@ function onConnected(source) {
 
 async function connectBle() {
   if (!("bluetooth" in navigator)) {
-    dom.connectionStatus.textContent = "Web Bluetooth ist in diesem Browser nicht verfügbar (Chrome empfohlen).";
+    dom.connectionStatus.textContent = "Web Bluetooth nicht verfügbar — nutze Chrome auf localhost.";
     return;
   }
   await cleanupConnection();
-  dom.connectionStatus.textContent = "Suche SmartShirt-ESP32 …";
+  dom.connectionStatus.textContent = "Gerät auswählen …";
   try {
-    let device;
-    // try strict filter first, fall back to name prefix, then accept-all
-    for (const opts of [
-      { filters: [{ services: [BLE_SERVICE] }], optionalServices: [BLE_SERVICE] },
-      { filters: [{ namePrefix: "SmartShirt" }, { namePrefix: "ESP32" }], optionalServices: [BLE_SERVICE] },
-      { acceptAllDevices: true, optionalServices: [BLE_SERVICE] },
-    ]) {
-      try { device = await navigator.bluetooth.requestDevice(opts); break; } catch { /* try next */ }
-    }
-    if (!device) throw new Error("Kein Gerät ausgewählt.");
+    // acceptAllDevices zeigt alle BLE-Geräte — zuverlässigster Weg
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [BLE_SERVICE],
+    });
 
+    dom.connectionStatus.textContent = `Verbinde mit ${device.name ?? "Gerät"} …`;
     state.bleDevice = device;
+
     const server  = await device.gatt.connect();
     const service = await server.getPrimaryService(BLE_SERVICE);
     state.bleChar  = await service.getCharacteristic(BLE_TX_CHAR);
     await state.bleChar.startNotifications();
     state.bleChar.addEventListener("characteristicvaluechanged", onBleData);
+
+    // Reconnect automatisch wenn Verbindung abbricht
+    device.addEventListener("gattserverdisconnected", () => {
+      dom.connDot.className = "conn-dot";
+      dom.connectionStatus.textContent = "Verbindung unterbrochen — bitte neu verbinden.";
+      state.connected = false;
+    });
+
     onConnected("ble");
   } catch (err) {
-    dom.connectionStatus.textContent = `Bluetooth Fehler: ${err.message}`;
+    if (err.name === "NotFoundError") {
+      dom.connectionStatus.textContent = "Kein Gerät ausgewählt.";
+    } else {
+      dom.connectionStatus.textContent = `Bluetooth Fehler: ${err.message}`;
+    }
   }
 }
 
