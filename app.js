@@ -16,14 +16,12 @@ const EXERCISES = {
 const state = {
   // connection
   connected:     false,
-  source:        null,     // "wifi" | "ble" | "serial" | "mock"
+  source:        null,     // "ble" | "serial" | "mock"
   serialPort:    null,
   reader:        null,
   bleDevice:     null,
   bleChar:       null,
   bleBuffer:     "",
-  ws:            null,
-  wsBuffer:      "",
   mockTimer:     null,
   latest:        null,
 
@@ -54,8 +52,6 @@ const dom = {
   topbarTitle:       $("topbar-title"),
   connDot:           $("conn-dot"),
   // connect
-  connectWifi:       $("connect-wifi"),
-  wifiHost:          $("wifi-host"),
   connectBle:        $("connect-ble"),
   connectSerial:     $("connect-serial"),
   toggleMock:        $("toggle-mock"),
@@ -135,61 +131,9 @@ function showScreen(name) {
 }
 
 // ── Connection ───────────────────────────────────────────────────
-dom.connectWifi.addEventListener("click", connectWifi);
 dom.connectBle.addEventListener("click", connectBle);
 dom.connectSerial.addEventListener("click", connectSerial);
 dom.toggleMock.addEventListener("click", toggleMock);
-
-async function connectWifi() {
-  const host = dom.wifiHost.value.trim() || "smartshirt.local";
-  const url  = `ws://${host}:81`;
-  await cleanupConnection();
-  dom.connectionStatus.textContent = `Verbinde mit ${url} …`;
-
-  return new Promise(resolve => {
-    const ws = new WebSocket(url);
-    state.ws = ws;
-
-    const timeout = setTimeout(() => {
-      ws.close();
-      dom.connectionStatus.textContent =
-        `⏱ Timeout — kein ESP32 auf "${host}". ` +
-        `Tipp: Serial Monitor öffnen und echte IP-Adresse (z.B. 192.168.1.42) eingeben.`;
-      resolve();
-    }, 6000);
-
-    ws.onopen = () => {
-      clearTimeout(timeout);
-      onConnected("wifi");
-      resolve();
-    };
-
-    ws.onmessage = evt => {
-      state.wsBuffer += evt.data;
-      const lines = state.wsBuffer.split("\n");
-      state.wsBuffer = lines.pop() ?? "";
-      lines.forEach(l => { const s = parseLine(l.trim()); if (s) handleSample(s); });
-    };
-
-    ws.onerror = () => {
-      clearTimeout(timeout);
-      dom.connectionStatus.textContent =
-        `❌ Kein ESP32 auf "${host}" gefunden. Prüfe: ` +
-        `1) Neue Firmware geflasht? ` +
-        `2) WLAN-Daten korrekt? ` +
-        `3) Serial Monitor öffnen → echte IP ablesen → hier eingeben statt smartshirt.local`;
-      resolve();
-    };
-
-    ws.onclose = () => {
-      if (state.connected && state.source === "wifi") {
-        state.connected = false;
-        dom.connDot.className = "conn-dot";
-        dom.connectionStatus.textContent = "WLAN-Verbindung unterbrochen.";
-      }
-    };
-  });
-}
 
 function onConnected(source) {
   state.connected = true;
@@ -311,7 +255,6 @@ function toggleMock() {
 async function cleanupConnection() {
   state.connected = false;
   if (state.mockTimer)  { clearInterval(state.mockTimer); state.mockTimer = null; }
-  if (state.ws)         { try { state.ws.close(); } catch {} state.ws = null; }
   if (state.reader)     { try { await state.reader.cancel(); } catch {} state.reader = null; }
   if (state.serialPort) { try { await state.serialPort.close(); } catch {} state.serialPort = null; }
   if (state.bleChar) {
