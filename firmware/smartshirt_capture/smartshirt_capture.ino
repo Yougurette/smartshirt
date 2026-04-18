@@ -42,14 +42,11 @@ const float ALPHA = 0.2f;
 // ── Verbindungen ─────────────────────────────────────────────────
 WebSocketsServer ws(81);
 BLECharacteristic* txChar = nullptr;
-bool bleClientOn  = false;
-bool wifiOk       = false;
+bool wifiOk = false;
 
 // ── BLE Callbacks ────────────────────────────────────────────────
 class BleCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer*)    override { bleClientOn = true;  }
   void onDisconnect(BLEServer*) override {
-    bleClientOn = false;
     BLEDevice::startAdvertising();
   }
 };
@@ -171,8 +168,8 @@ void loop() {
 
   Serial.println(line);
 
-  if (wifiOk)                       ws.broadcastTXT(line);
-  if (bleClientOn && txChar)        { txChar->setValue(line.c_str()); txChar->notify(); }
+  if (wifiOk) ws.broadcastTXT(line);
+  if (txChar) { txChar->setValue(line.c_str()); txChar->notify(); }
 
   delay(35);
 }
