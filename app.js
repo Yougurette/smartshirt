@@ -274,16 +274,24 @@ async function connectBle() {
   try {
     // 1) Primär: strikt nach Service filtern
     // 2) Fallback: nach Gerätename suchen (hilft wenn Service nicht korrekt advertised wird)
+    // 3) Letzter Fallback: alle BLE Geräte zulassen
     try {
       state.bleDevice = await navigator.bluetooth.requestDevice({
         filters: [{ services: [BLE_UART_SERVICE] }],
         optionalServices: [BLE_UART_SERVICE],
       });
     } catch {
-      state.bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: "SmartShirt" }, { namePrefix: "ESP32" }],
-        optionalServices: [BLE_UART_SERVICE],
-      });
+      try {
+        state.bleDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ namePrefix: "SmartShirt" }, { namePrefix: "ESP32" }],
+          optionalServices: [BLE_UART_SERVICE],
+        });
+      } catch {
+        state.bleDevice = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [BLE_UART_SERVICE],
+        });
+      }
     }
 
     const server = await state.bleDevice.gatt.connect();

@@ -80,3 +80,4 @@ Wenn der Browser trotzdem „kein kompatibles Gerät“ zeigt:
 3. Nutze Chrome auf `http://localhost:8080` oder `http://127.0.0.1:8080`.
 4. Firmware neu flashen (die BLE-UUIDs müssen zur Web-App passen).
 5. Erst in der Web-App auf **ESP32 via Bluetooth (BLE)** klicken (kein separates Windows-Bluetooth-Pairing nötig).
+6. Wichtig: Das ist **BLE**, nicht klassisches Bluetooth. Manche Bluetooth-Listen im OS zeigen das Gerät nicht wie Kopfhörer an.
