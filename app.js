@@ -88,7 +88,11 @@ const dom = {
   stopWorkout:       $("stop-workout"),
   // debug
   liveData:          $("live-data"),
+  dataDot:           $("data-dot"),
+  calCounter:        $("cal-counter"),
 };
+
+let sampleCount = 0;
 
 // ── Screen Router ────────────────────────────────────────────────
 const SCREENS = ["connect", "calibrate", "exercises", "detail", "workout"];
@@ -284,7 +288,19 @@ function parseLine(line) {
 function handleSample(sample) {
   const firstSample = !state.latest;
   state.latest = sample;
+  sampleCount++;
   dom.liveData.textContent = JSON.stringify(sample, null, 2);
+
+  // Blinkender Punkt im Debug-Panel
+  dom.dataDot.classList.add("alive");
+  clearTimeout(dom.dataDot._offTimer);
+  dom.dataDot._offTimer = setTimeout(() => dom.dataDot.classList.remove("alive"), 300);
+
+  // Zähler auf Kalibrierungsscreen
+  if (dom.calCounter) {
+    dom.calCounter.textContent = `✅ ${sampleCount} Datenpunkte empfangen — Sensoren aktiv`;
+    dom.calCounter.className = "cal-counter ok";
+  }
 
   // Sobald das erste Sample ankommt: Kalibrierungsbuttons freischalten
   if (firstSample) {
@@ -292,8 +308,6 @@ function handleSample(sample) {
     dom.calProne.disabled = false;
     dom.calStand.textContent = "Position jetzt speichern";
     dom.calProne.textContent = "Position jetzt speichern";
-    const waiting = document.getElementById("cal-waiting");
-    if (waiting) waiting.remove();
   }
 
   if (state.isRecording) {

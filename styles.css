@@ -472,6 +472,31 @@ body {
 .feedback-card.good .feedback-main { color: #065F46; }
 .feedback-card.warn .feedback-main { color: #92400E; }
 
+/* ── Live data indicator ───────────────────────────────────────── */
+.data-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--slate-300);
+  margin-left: 6px;
+  vertical-align: middle;
+  transition: background 0.2s;
+}
+.data-dot.alive { background: #4ADE80; animation: blink-data 1s ease-in-out infinite; }
+@keyframes blink-data {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.cal-counter {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--slate-500);
+  padding: 0.25rem 0;
+}
+.cal-counter.ok { color: var(--green); font-weight: 600; }
+
 /* ── Debug drawer ──────────────────────────────────────────────── */
 .debug-drawer {
   border-top: 1px solid var(--slate-200);
