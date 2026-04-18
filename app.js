@@ -90,6 +90,13 @@ const dom = {
   liveData:          $("live-data"),
   dataDot:           $("data-dot"),
   calCounter:        $("cal-counter"),
+  // calibration progress
+  calProgress1:      $("cal-progress-1"),
+  calBar1:           $("cal-bar-1"),
+  calCountdown1:     $("cal-countdown-1"),
+  calProgress2:      $("cal-progress-2"),
+  calBar2:           $("cal-bar-2"),
+  calCountdown2:     $("cal-countdown-2"),
 };
 
 let sampleCount = 0;
@@ -154,7 +161,6 @@ function onConnected(source) {
 }
 
 async function connectBle() {
-  // Web Bluetooth braucht einen sicheren Kontext (localhost oder https)
   if (!window.isSecureContext) {
     dom.connectionStatus.textContent =
       "⚠️ Bluetooth funktioniert nur über http://localhost:8080 — öffne die App nicht als Datei direkt im Browser!";
@@ -171,28 +177,28 @@ async function connectBle() {
 
   try {
     const device = await navigator.bluetooth.requestDevice({
-      // Zeigt alle BLE-Geräte — zuverlässiger als Service-UUID-Filter
-      acceptAllDevices: true,
+      filters: [{ name: "SmartShirt-ESP32" }],
       optionalServices: [BLE_SERVICE],
     });
 
-    dom.connectionStatus.textContent = `Verbinde mit "${device.name ?? "Gerät"}" …`;
+    dom.connectionStatus.textContent = `Verbinde mit "${device.name}" …`;
     state.bleDevice = device;
 
-    const server  = await device.gatt.connect();
+    const server = await device.gatt.connect();
 
     let service;
     try {
       service = await server.getPrimaryService(BLE_SERVICE);
     } catch {
       dom.connectionStatus.textContent =
-        `"${device.name}" gefunden, aber kein SmartShirt-Service — falsches Gerät gewählt?`;
+        `"${device.name}" gefunden, aber kein SmartShirt-Service — falsches Gerät?`;
       return;
     }
 
     state.bleChar = await service.getCharacteristic(BLE_TX_CHAR);
     await state.bleChar.startNotifications();
     state.bleChar.addEventListener("characteristicvaluechanged", onBleData);
+    dom.liveData.textContent = "BLE verbunden — warte auf erste Daten …";
 
     device.addEventListener("gattserverdisconnected", () => {
       dom.connDot.className = "conn-dot";
@@ -204,6 +210,9 @@ async function connectBle() {
   } catch (err) {
     if (err.name === "NotFoundError") {
       dom.connectionStatus.textContent = "Kein Gerät ausgewählt.";
+    } else if (err.name === "TypeError") {
+      // Fallback: some browsers need acceptAllDevices for name filter to work
+      dom.connectionStatus.textContent = "Filter fehlgeschlagen — versuche es mit Demo-Modus oder USB.";
     } else {
       dom.connectionStatus.textContent = `Bluetooth Fehler: ${err.message}`;
     }
@@ -304,10 +313,8 @@ function handleSample(sample) {
 
   // Sobald das erste Sample ankommt: Kalibrierungsbuttons freischalten
   if (firstSample) {
-    dom.calStand.disabled = false;
-    dom.calProne.disabled = false;
-    dom.calStand.textContent = "Position jetzt speichern";
-    dom.calProne.textContent = "Position jetzt speichern";
+    if (!_calStanding) { dom.calStand.disabled = false; dom.calStand.textContent = "Aufnahme starten"; }
+    if (!_calProne)    { dom.calProne.disabled = false; dom.calProne.textContent = "Aufnahme starten"; }
   }
 
   if (state.isRecording) {
@@ -323,10 +330,21 @@ function handleSample(sample) {
 }
 
 function onBleData(event) {
-  state.bleBuffer += new TextDecoder().decode(event.target.value);
+  const chunk = new TextDecoder().decode(event.target.value);
+  state.bleBuffer += chunk;
   const lines = state.bleBuffer.split("\n");
   state.bleBuffer = lines.pop() ?? "";
-  lines.forEach(l => { const s = parseLine(l.trim()); if (s) handleSample(s); });
+  lines.forEach(l => {
+    const trimmed = l.trim();
+    if (!trimmed) return;
+    const s = parseLine(trimmed);
+    if (s) {
+      handleSample(s);
+    } else {
+      // Show raw line that failed to parse so we can diagnose format issues
+      dom.liveData.textContent = `[RAW, parse failed]:\n${trimmed}`;
+    }
+  });
 }
 
 async function readSerialLoop() {
@@ -346,28 +364,70 @@ async function readSerialLoop() {
 }
 
 // ── Calibration ──────────────────────────────────────────────────
+const CAL_DURATION = 10000;
 let _calStanding = null;
 let _calProne    = null;
+let _calActiveTimer = null;
 
-dom.calStand.addEventListener("click", () => {
-  _calStanding = { ...state.latest };
-  dom.calStandOk.textContent = "✅ Gespeichert";
-  dom.calStandOk.hidden = false;
+dom.calStand.addEventListener("click", () => startCalPhase("stand"));
+dom.calProne.addEventListener("click",  () => startCalPhase("prone"));
+
+function startCalPhase(type) {
+  if (_calActiveTimer) return; // already recording
+  const isStand   = type === "stand";
+  const btn       = isStand ? dom.calStand       : dom.calProne;
+  const progressW = isStand ? dom.calProgress1   : dom.calProgress2;
+  const bar       = isStand ? dom.calBar1        : dom.calBar2;
+  const countdown = isStand ? dom.calCountdown1  : dom.calCountdown2;
+  const okEl      = isStand ? dom.calStandOk     : dom.calProneOk;
+  const chip      = isStand ? dom.stepChip1      : dom.stepChip2;
+
+  // Disable both buttons while recording
   dom.calStand.disabled = true;
-  dom.calStand.textContent = "✅ Gespeichert";
-  dom.stepChip1.classList.add("done");
-  checkCalReady();
-});
-
-dom.calProne.addEventListener("click", () => {
-  _calProne = { ...state.latest };
-  dom.calProneOk.textContent = "✅ Gespeichert";
-  dom.calProneOk.hidden = false;
   dom.calProne.disabled = true;
-  dom.calProne.textContent = "✅ Gespeichert";
-  dom.stepChip2.classList.add("done");
-  checkCalReady();
-});
+  btn.textContent = "Aufnahme läuft …";
+  progressW.hidden = false;
+  bar.style.width  = "0%";
+
+  const samples   = [];
+  const startTime = Date.now();
+
+  const tick = setInterval(() => {
+    if (state.latest) samples.push({ ...state.latest });
+
+    const elapsed  = Date.now() - startTime;
+    const pct      = Math.min(elapsed / CAL_DURATION * 100, 100);
+    const secsLeft = Math.max(0, Math.ceil((CAL_DURATION - elapsed) / 1000));
+    bar.style.width      = pct + "%";
+    countdown.textContent = secsLeft;
+
+    if (elapsed >= CAL_DURATION) {
+      clearInterval(tick);
+      _calActiveTimer = null;
+
+      if (samples.length > 0) {
+        const avg = summarize(samples);
+        if (isStand) _calStanding = avg; else _calProne = avg;
+      }
+
+      progressW.hidden = false;
+      bar.style.width  = "100%";
+      btn.disabled     = true;
+      btn.textContent  = "✅ Gespeichert";
+      okEl.hidden      = false;
+      chip.classList.add("done");
+
+      // Re-enable the OTHER button if not yet done
+      if (isStand && !_calProne  && dom.calProne.textContent !== "✅ Gespeichert")
+        dom.calProne.disabled = false;
+      if (!isStand && !_calStanding && dom.calStand.textContent !== "✅ Gespeichert")
+        dom.calStand.disabled = false;
+
+      checkCalReady();
+    }
+  }, 100);
+  _calActiveTimer = tick;
+}
 
 function checkCalReady() {
   if (_calStanding && _calProne) dom.calDone.disabled = false;
@@ -380,14 +440,20 @@ dom.calDone.addEventListener("click", () => {
 });
 
 dom.recalibrateBtn.addEventListener("click", () => {
+  if (_calActiveTimer) { clearInterval(_calActiveTimer); _calActiveTimer = null; }
   _calStanding = null; _calProne = null;
-  dom.calStand.disabled  = false; dom.calStand.textContent  = "Position jetzt speichern";
-  dom.calProne.disabled  = false; dom.calProne.textContent  = "Position jetzt speichern";
-  dom.calStandOk.hidden  = true;
-  dom.calProneOk.hidden  = true;
-  dom.calDone.disabled   = true;
+  dom.calStand.textContent  = "Aufnahme starten";
+  dom.calProne.textContent  = "Aufnahme starten";
+  dom.calStandOk.hidden = true;
+  dom.calProneOk.hidden = true;
+  dom.calProgress1.hidden = true;
+  dom.calProgress2.hidden = true;
+  dom.calDone.disabled  = true;
   dom.stepChip1.classList.remove("done");
   dom.stepChip2.classList.remove("done");
+  // Only enable if sensor data is already flowing
+  dom.calStand.disabled = !state.latest;
+  dom.calProne.disabled = !state.latest;
   showScreen("calibrate");
 });
 

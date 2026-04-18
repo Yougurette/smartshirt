@@ -254,6 +254,26 @@ body {
   text-align: center;
 }
 
+.cal-progress-wrap { display: flex; flex-direction: column; gap: 0.4rem; }
+.cal-progress-track {
+  height: 8px;
+  background: var(--slate-200);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.cal-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--blue);
+  border-radius: 99px;
+  transition: width 0.1s linear;
+}
+.cal-countdown-text {
+  font-size: 0.82rem;
+  color: var(--slate-500);
+  text-align: center;
+}
+
 /* ── Exercises ─────────────────────────────────────────────────── */
 .section-head h2   { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
 .section-head p    { color: var(--slate-500); font-size: 0.875rem; margin-top: 0.2rem; }
