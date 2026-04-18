@@ -153,7 +153,8 @@ async function connectWifi() {
     const timeout = setTimeout(() => {
       ws.close();
       dom.connectionStatus.textContent =
-        `Timeout — kein ESP32 auf ${host} gefunden. IP/Name korrekt?`;
+        `⏱ Timeout — kein ESP32 auf "${host}". ` +
+        `Tipp: Serial Monitor öffnen und echte IP-Adresse (z.B. 192.168.1.42) eingeben.`;
       resolve();
     }, 6000);
 
@@ -173,7 +174,10 @@ async function connectWifi() {
     ws.onerror = () => {
       clearTimeout(timeout);
       dom.connectionStatus.textContent =
-        `Verbindung fehlgeschlagen. Läuft der ESP32 und ist er im gleichen WLAN?`;
+        `❌ Kein ESP32 auf "${host}" gefunden. Prüfe: ` +
+        `1) Neue Firmware geflasht? ` +
+        `2) WLAN-Daten korrekt? ` +
+        `3) Serial Monitor öffnen → echte IP ablesen → hier eingeben statt smartshirt.local`;
       resolve();
     };
 
