@@ -76,6 +76,7 @@ void setup() {
 
   // BLE
   BLEDevice::init(BLE_NAME);
+  BLEDevice::setMTU(517);
   BLEServer* srv = BLEDevice::createServer();
   srv->setCallbacks(new BleCallbacks());
   BLEService* svc = srv->createService(SVC_UUID);
