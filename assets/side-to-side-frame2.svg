@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180" fill="none">
+  <rect width="320" height="180" rx="16" fill="#F4F0FF"/>
+  <rect x="34" y="112" width="252" height="16" rx="8" fill="#E1D6FF"/>
+  <circle cx="206" cy="76" r="12" fill="#26A269"/>
+  <path d="M206 88L172 102" stroke="#26A269" stroke-width="8" stroke-linecap="round"/>
+  <path d="M172 102L144 102" stroke="#26A269" stroke-width="8" stroke-linecap="round"/>
+  <path d="M144 102L114 64" stroke="#26A269" stroke-width="8" stroke-linecap="round"/>
+  <path d="M62 64C50 74 50 90 62 100" stroke="#B35C00" stroke-width="4" stroke-linecap="round"/>
+  <path d="M258 64C270 74 270 90 258 100" stroke="#B35C00" stroke-width="4" stroke-linecap="round"/>
+  <path d="M48 82H22" stroke="#B35C00" stroke-width="4" stroke-linecap="round"/>
+  <path d="M272 82H298" stroke="#B35C00" stroke-width="4" stroke-linecap="round"/>
+  <text x="20" y="168" fill="#3D2F8D" font-size="14" font-family="Arial">Side-to-side: andere Seite (abwechselnd links/rechts)</text>
+</svg>
