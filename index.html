@@ -16,7 +16,8 @@
       <section class="panel" id="connection-panel">
         <h2>1) Verbindung</h2>
         <div class="row">
-          <button id="connect-serial">ESP32 via Serial verbinden</button>
+          <button id="connect-serial">ESP32 via Serial</button>
+          <button id="connect-ble">ESP32 via Bluetooth (BLE)</button>
           <button id="toggle-mock">Mockdaten starten</button>
         </div>
         <small id="connection-status">Noch nicht verbunden.</small>
@@ -33,15 +34,19 @@
 
       <section class="panel" id="optimum-panel">
         <h2>3) Optimum aufnehmen</h2>
-        <div class="exercise-card">
-          <h3>Frontal Raise</h3>
-          <p>Mache 3–5 saubere Wiederholungen.</p>
-          <button data-capture="frontal">Optimum speichern</button>
+        <div class="exercise-grid">
+          <button class="exercise-tile" data-workout="frontal">
+            <img src="assets/frontal-raise.svg" alt="Illustration Frontal Raise" />
+            <span>Frontal Raise</span>
+          </button>
+          <button class="exercise-tile" data-workout="side">
+            <img src="assets/side-to-side.svg" alt="Illustration Side-to-side in Bauchlage" />
+            <span>Side-to-side (Bauchlage)</span>
+          </button>
         </div>
-        <div class="exercise-card">
-          <h3>Side to Side (Bauchlage)</h3>
-          <p>Gehe bewusst nach links und rechts.</p>
-          <button data-capture="side">Optimum speichern</button>
+        <div class="row">
+          <button data-capture="frontal">Optimum Frontal Raise speichern</button>
+          <button data-capture="side">Optimum Side-to-side speichern</button>
         </div>
         <p id="optimum-status">Noch keine Optimum-Daten gespeichert.</p>
       </section>
@@ -54,7 +59,10 @@
           <button id="stop-workout" class="secondary">Stop</button>
         </div>
 
-        <div class="illustration" id="illustration">Wähle eine Übung.</div>
+        <div class="illustration" id="illustration">
+          <img id="exercise-image" src="assets/frontal-raise.svg" alt="Aktuelle Übungsillustration" />
+          <p id="exercise-title">Wähle eine Übung.</p>
+        </div>
 
         <div class="feedback" id="feedback-box">
           <p class="hint" id="hint-text">Feedback erscheint hier ...</p>

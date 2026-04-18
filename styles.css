@@ -20,7 +20,7 @@ body {
 }
 
 .app {
-  max-width: 920px;
+  max-width: 980px;
   margin: 2rem auto;
   padding: 0 1rem 2rem;
 }
@@ -57,23 +57,50 @@ button.secondary {
   background: #6c7386;
 }
 
-.exercise-card {
-  border: 1px solid #ece7ff;
+.exercise-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.exercise-tile {
   border-radius: 12px;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
+  padding: 0.55rem;
+  background: #f5f1ff;
+  border: 1px solid #e6dbff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.exercise-tile img {
+  width: 100%;
+  border-radius: 8px;
+  height: 140px;
+  object-fit: cover;
 }
 
 .illustration {
   margin-top: 1rem;
   border: 2px dashed #d7cbff;
   border-radius: 10px;
-  min-height: 90px;
-  display: grid;
-  place-items: center;
-  font-size: 1.05rem;
+  min-height: 190px;
   padding: 0.75rem;
   text-align: center;
+}
+
+#exercise-image {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 10px;
+  background: #f5f1ff;
+}
+
+#exercise-title {
+  margin-top: 0.6rem;
+  font-size: 1.05rem;
 }
 
 .feedback {

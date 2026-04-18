@@ -1,7 +1,25 @@
+const BLE_UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const BLE_UART_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // device -> app notify
+
+const EXERCISE_META = {
+  frontal: {
+    title: "🧍 Frontal Raise: beide Arme kontrolliert nach oben führen",
+    image: "assets/frontal-raise.svg",
+  },
+  side: {
+    title: "🤸 Side-to-side: in Bauchlage gleichmäßig links/rechts bewegen",
+    image: "assets/side-to-side.svg",
+  },
+};
+
 const state = {
   connected: false,
+  source: null,
   serialPort: null,
   reader: null,
+  bleDevice: null,
+  bleChar: null,
+  bleBuffer: "",
   mockTimer: null,
   latest: null,
   calibration: {
@@ -21,6 +39,7 @@ const state = {
 
 const els = {
   connectSerial: document.getElementById("connect-serial"),
+  connectBle: document.getElementById("connect-ble"),
   toggleMock: document.getElementById("toggle-mock"),
   connectionStatus: document.getElementById("connection-status"),
   calStand: document.getElementById("cal-stand"),
@@ -30,7 +49,8 @@ const els = {
   liveData: document.getElementById("live-data"),
   hintText: document.getElementById("hint-text"),
   qualityText: document.getElementById("quality-text"),
-  illustration: document.getElementById("illustration"),
+  exerciseImage: document.getElementById("exercise-image"),
+  exerciseTitle: document.getElementById("exercise-title"),
   stopWorkout: document.getElementById("stop-workout"),
 };
 
@@ -39,17 +59,20 @@ document.querySelectorAll("[data-capture]").forEach((btn) => {
 });
 
 document.querySelectorAll("[data-workout]").forEach((btn) => {
-  btn.addEventListener("click", () => startWorkout(btn.dataset.workout));
+  btn.addEventListener("click", () => {
+    setExerciseVisual(btn.dataset.workout);
+    startWorkout(btn.dataset.workout);
+  });
 });
 
 els.connectSerial.addEventListener("click", connectSerial);
+els.connectBle.addEventListener("click", connectBle);
 els.toggleMock.addEventListener("click", toggleMockData);
 els.calStand.addEventListener("click", () => saveCalibration("standing"));
 els.calProne.addEventListener("click", () => saveCalibration("prone"));
 els.stopWorkout.addEventListener("click", stopWorkout);
 
 function parseLine(line) {
-  // Erwartetes Format: L:1234,R:1678,AX:12,AY:3,AZ:16384,GX:2,GY:-4,GZ:11
   const out = {};
   line.split(",").forEach((pair) => {
     const [k, v] = pair.split(":");
@@ -126,10 +149,7 @@ function startWorkout(exercise) {
 
   state.activeWorkout = exercise;
   state.captureBuffer[exercise] = [];
-  els.illustration.textContent =
-    exercise === "frontal"
-      ? "🧍 Frontal Raise: beide Arme kontrolliert nach oben führen"
-      : "🤸 Side-to-side: in Bauchlage gleichmäßig links/rechts bewegen";
+  setExerciseVisual(exercise);
   els.hintText.textContent = "Workout läuft ...";
   els.qualityText.textContent = "Ich beobachte deine Symmetrie.";
 }
@@ -138,6 +158,13 @@ function stopWorkout() {
   state.activeWorkout = null;
   els.hintText.textContent = "Workout gestoppt.";
   els.qualityText.textContent = "Bereit für die nächste Runde.";
+}
+
+function setExerciseVisual(exercise) {
+  const meta = EXERCISE_META[exercise];
+  if (!meta) return;
+  els.exerciseImage.src = meta.image;
+  els.exerciseTitle.textContent = meta.title;
 }
 
 function summarize(samples) {
@@ -186,10 +213,8 @@ function updateFeedback() {
   const sideBias = current.ay - target.ay;
   if (Math.abs(sideBias) < 700) {
     setFeedback("✅ Schön gleichmäßig links/rechts.", "Gute Balance in Bauchlage.", true);
-  } else if (sideBias > 0) {
-    setFeedback("↙ Ich sehe mehr Bewegung zu einer Seite. Nimm auch die andere Seite mit.", "Asymmetrie erkannt.", false);
   } else {
-    setFeedback("↘ Ich sehe mehr Bewegung zu einer Seite. Nimm auch die andere Seite mit.", "Asymmetrie erkannt.", false);
+    setFeedback("↔ Ich sehe gerade eine Seite stärker. Geh bewusst auch zur anderen Seite.", "Asymmetrie erkannt.", false);
   }
 }
 
@@ -206,15 +231,95 @@ async function connectSerial() {
     return;
   }
 
+  await disconnectSource();
+
   try {
     state.serialPort = await navigator.serial.requestPort();
     await state.serialPort.open({ baudRate: 115200 });
     state.connected = true;
+    state.source = "serial";
     els.connectionStatus.textContent = "ESP32 via Serial verbunden ✅";
     readSerialLoop();
   } catch (err) {
-    els.connectionStatus.textContent = `Verbindung fehlgeschlagen: ${err.message}`;
+    els.connectionStatus.textContent = `Serial fehlgeschlagen: ${err.message}`;
   }
+}
+
+async function connectBle() {
+  if (!("bluetooth" in navigator)) {
+    els.connectionStatus.textContent = "Web Bluetooth ist im aktuellen Browser nicht verfügbar.";
+    return;
+  }
+
+  await disconnectSource();
+
+  try {
+    state.bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [BLE_UART_SERVICE] }],
+      optionalServices: [BLE_UART_SERVICE],
+    });
+
+    const server = await state.bleDevice.gatt.connect();
+    const service = await server.getPrimaryService(BLE_UART_SERVICE);
+    state.bleChar = await service.getCharacteristic(BLE_UART_TX);
+
+    await state.bleChar.startNotifications();
+    state.bleChar.addEventListener("characteristicvaluechanged", onBleData);
+
+    state.connected = true;
+    state.source = "ble";
+    els.connectionStatus.textContent = "ESP32 via BLE verbunden ✅";
+  } catch (err) {
+    els.connectionStatus.textContent = `BLE fehlgeschlagen: ${err.message}`;
+  }
+}
+
+function onBleData(event) {
+  const value = new TextDecoder().decode(event.target.value);
+  state.bleBuffer += value;
+  const lines = state.bleBuffer.split("\n");
+  state.bleBuffer = lines.pop() || "";
+  for (const line of lines) {
+    const sample = parseLine(line.trim());
+    if (sample) handleSample(sample);
+  }
+}
+
+async function disconnectSource() {
+  state.connected = false;
+
+  if (state.reader) {
+    try {
+      await state.reader.cancel();
+    } catch {
+      // ignore
+    }
+    state.reader = null;
+  }
+
+  if (state.serialPort) {
+    try {
+      await state.serialPort.close();
+    } catch {
+      // ignore
+    }
+    state.serialPort = null;
+  }
+
+  if (state.bleChar) {
+    try {
+      await state.bleChar.stopNotifications();
+      state.bleChar.removeEventListener("characteristicvaluechanged", onBleData);
+    } catch {
+      // ignore
+    }
+    state.bleChar = null;
+  }
+
+  if (state.bleDevice?.gatt?.connected) {
+    state.bleDevice.gatt.disconnect();
+  }
+  state.bleDevice = null;
 }
 
 async function readSerialLoop() {
@@ -225,8 +330,7 @@ async function readSerialLoop() {
   state.reader = reader;
 
   let buffer = "";
-
-  while (state.connected) {
+  while (state.connected && state.source === "serial") {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += value;
