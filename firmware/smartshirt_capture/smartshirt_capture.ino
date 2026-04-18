@@ -1,26 +1,14 @@
 /*
   SmartShirt ESP32 Firmware
   Sensoren: MPU6050 (I2C) + 2x Flex (ADC)
-  Ausgabe:  Serial  +  BLE Notify  +  WebSocket (WiFi Port 81)
-
-  Benötigte Libraries (Arduino Library Manager):
-    - arduinoWebSockets  (by Markus Sattler / Links2004)
-    - ESP32 Board Package (espressif/arduino-esp32)
+  Ausgabe:  Serial  +  BLE Notify
 */
 
 #include <Wire.h>
-#include <WiFi.h>
-#include <WebSocketsServer.h>
-#include <ESPmDNS.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
-
-// ── WiFi Zugangsdaten  ←  HIER ANPASSEN ─────────────────────────
-const char* WIFI_SSID = "WN-7A8150";
-const char* WIFI_PASS = "jwuhkstu";
-// ────────────────────────────────────────────────────────────────
 
 // ── Pins ─────────────────────────────────────────────────────────
 #define I2C_SDA    18
@@ -39,24 +27,18 @@ int16_t accelX, accelY, accelZ, gyroX, gyroY, gyroZ;
 float fL=0, fR=0, fAX=0, fAY=0, fAZ=0, fGX=0, fGY=0, fGZ=0;
 const float ALPHA = 0.2f;
 
-// ── Verbindungen ─────────────────────────────────────────────────
-WebSocketsServer ws(81);
+// ── BLE ──────────────────────────────────────────────────────────
 BLECharacteristic* txChar = nullptr;
-bool wifiOk = false;
 
-// ── BLE Callbacks ────────────────────────────────────────────────
 class BleCallbacks : public BLEServerCallbacks {
-  void onDisconnect(BLEServer*) override {
+  void onConnect(BLEServer* s) override {
+    Serial.println("BLE Client verbunden");
+  }
+  void onDisconnect(BLEServer* s) override {
+    Serial.println("BLE Client getrennt — starte Advertising neu");
     BLEDevice::startAdvertising();
   }
 };
-
-// ── WebSocket Callback ───────────────────────────────────────────
-void onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
-  if (type == WStype_CONNECTED) {
-    Serial.printf("[WS] Client #%u verbunden\n", num);
-  }
-}
 
 // ── MPU Hilfsfunktionen ──────────────────────────────────────────
 void mpuWrite(uint8_t reg, uint8_t val) {
@@ -79,50 +61,20 @@ float lp(float old, float neu) { return old + ALPHA * (neu - old); }
 // ── Setup ────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(500);
   Serial.println("\n=== SmartShirt Boot ===");
 
-  // MPU6050 initialisieren
+  // MPU6050
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(100000);
   delay(200);
   mpuWrite(0x6B, 0x00);  // wake up
   delay(50);
-  mpuWrite(0x1B, 0x08);  // Gyro  ±500°/s
+  mpuWrite(0x1B, 0x08);  // Gyro ±500°/s
   mpuWrite(0x1C, 0x10);  // Accel ±8g
   Serial.println("MPU6050 bereit");
 
-  // WiFi verbinden
-  Serial.printf("WiFi: verbinde mit \"%s\" ...\n", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 10000) {
-    delay(500); Serial.print(".");
-  }
-  Serial.println();
-
-  if (WiFi.status() == WL_CONNECTED) {
-    wifiOk = true;
-    Serial.print("WiFi verbunden! IP: ");
-    Serial.println(WiFi.localIP());
-
-    // mDNS: erreichbar als  smartshirt.local
-    if (MDNS.begin("smartshirt")) {
-      Serial.println("mDNS: smartshirt.local");
-    }
-
-    ws.begin();
-    ws.onEvent(onWsEvent);
-    Serial.println("WebSocket Server auf Port 81 gestartet");
-    Serial.print("App-URL: ws://");
-    Serial.print(WiFi.localIP());
-    Serial.println(":81");
-  } else {
-    Serial.println("WiFi NICHT verbunden — nur BLE + Serial aktiv");
-    Serial.println("Prüfe SSID und Passwort in der Firmware!");
-  }
-
-  // BLE starten
+  // BLE
   BLEDevice::init(BLE_NAME);
   BLEServer* srv = BLEDevice::createServer();
   srv->setCallbacks(new BleCallbacks());
@@ -130,21 +82,19 @@ void setup() {
   txChar = svc->createCharacteristic(TX_CHAR_UUID,
     BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ);
   BLE2902* desc = new BLE2902();
-  desc->setNotifications(true);   // pre-enable so notify() always fires
+  desc->setNotifications(true);
   txChar->addDescriptor(desc);
   svc->start();
   BLEAdvertising* adv = BLEDevice::getAdvertising();
   adv->addServiceUUID(SVC_UUID);
   adv->setScanResponse(true);
   BLEDevice::startAdvertising();
-  Serial.println("BLE Advertising gestartet");
+  Serial.println("BLE Advertising gestartet — Name: SmartShirt-ESP32");
   Serial.println("=== Bereit ===\n");
 }
 
 // ── Loop ─────────────────────────────────────────────────────────
 void loop() {
-  if (wifiOk) ws.loop();
-
   uint8_t raw[14];
   if (!mpuRead(0x3B, 14, raw)) { delay(30); return; }
 
@@ -170,8 +120,6 @@ void loop() {
                 ",GZ:"+ String((int)fGZ);
 
   Serial.println(line);
-
-  if (wifiOk) ws.broadcastTXT(line);
   if (txChar) { txChar->setValue(line.c_str()); txChar->notify(); }
 
   delay(35);
