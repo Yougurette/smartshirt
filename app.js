@@ -4,10 +4,12 @@ const BLE_UART_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // device -> app not
 const EXERCISE_META = {
   frontal: {
     title: "🧍 Frontal Raise: beide Arme kontrolliert nach oben führen",
+    gif: "assets/3eGE2JC.gif",
     frames: ["assets/frontal-raise.svg", "assets/frontal-raise-frame2.svg"],
   },
   side: {
     title: "🤸 Side-to-side: in Bauchlage gleichmäßig links/rechts bewegen",
+    gif: "assets/6sYyrRX.gif",
     frames: ["assets/side-to-side.svg", "assets/side-to-side-frame2.svg"],
   },
 };
@@ -169,13 +171,8 @@ function setExerciseVisual(exercise) {
 
   stopExerciseVideo();
   state.videoFrameIndex = 0;
-  els.exerciseImage.src = meta.frames[0];
   els.exerciseTitle.textContent = meta.title;
-
-  state.videoTimer = setInterval(() => {
-    state.videoFrameIndex = (state.videoFrameIndex + 1) % meta.frames.length;
-    els.exerciseImage.src = meta.frames[state.videoFrameIndex];
-  }, 900);
+  startExerciseMedia(meta);
 }
 
 function stopExerciseVideo() {
@@ -183,6 +180,29 @@ function stopExerciseVideo() {
     clearInterval(state.videoTimer);
     state.videoTimer = null;
   }
+}
+
+function startExerciseMedia(meta) {
+  // Wenn GIF vorhanden, nutze es als echtes Übungs-Video.
+  // Falls Datei fehlt, fallback auf 2-Frame-Animation.
+  if (meta.gif) {
+    els.exerciseImage.onerror = () => {
+      els.exerciseImage.onerror = null;
+      startFrameAnimation(meta.frames);
+    };
+    els.exerciseImage.src = meta.gif;
+    return;
+  }
+
+  startFrameAnimation(meta.frames);
+}
+
+function startFrameAnimation(frames) {
+  els.exerciseImage.src = frames[0];
+  state.videoTimer = setInterval(() => {
+    state.videoFrameIndex = (state.videoFrameIndex + 1) % frames.length;
+    els.exerciseImage.src = frames[state.videoFrameIndex];
+  }, 900);
 }
 
 function summarize(samples) {
