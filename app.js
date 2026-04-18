@@ -7,8 +7,8 @@ const EXERCISES = {
   frontal: {
     title: "Frontal Raise",
     desc:  "Beide Arme gleichmäßig nach vorne und oben heben. Rücken gerade halten.",
-    image: "assets/frontal-raise.svg",
-    frames: ["assets/frontal-raise.svg", "assets/frontal-raise-frame2.svg"],
+    image: "assets/3eGE2JC.gif",
+    frames: ["assets/3eGE2JC.gif"],
   },
 };
 
@@ -506,7 +506,7 @@ dom.startWorkoutBtn.addEventListener("click", () => {
   dom.exerciseImage.src       = ex.frames[0];
   dom.workoutName.textContent = ex.title;
 
-  startFrameAnimation(ex.frames);
+  dom.exerciseImage.src = ex.image;   // GIF animiert sich selbst
   setFeedback("neutral", "⏳", "Workout läuft — mach los!", "Sammle Daten …");
   showScreen("workout");
 });
