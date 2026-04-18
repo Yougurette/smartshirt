@@ -68,3 +68,15 @@ Empfehlung: Chrome oder Edge.
 - Web Bluetooth in Mobile Browsern ist eingeschränkt.
 - Für Android funktioniert es meist besser mit Chrome.
 - Für iOS/Safari ist Web Bluetooth häufig limitiert; dann native App oder BLE-Bridge nutzen.
+
+## FAQ: Läuft der ESP32 ohne USB nach dem Upload?
+
+Ja. Nach dem Flashen bleibt der Sketch auf dem ESP32 gespeichert (Flash-Speicher). Du kannst USB abziehen und den ESP32 z. B. über Powerbank/Batterie versorgen.
+
+Wenn der Browser trotzdem „kein kompatibles Gerät“ zeigt:
+
+1. Prüfe, ob der ESP32 wirklich Strom hat (LED an).
+2. Drücke einmal `EN/RESET` nach dem Einschalten.
+3. Nutze Chrome auf `http://localhost:8080` oder `http://127.0.0.1:8080`.
+4. Firmware neu flashen (die BLE-UUIDs müssen zur Web-App passen).
+5. Erst in der Web-App auf **ESP32 via Bluetooth (BLE)** klicken (kein separates Windows-Bluetooth-Pairing nötig).

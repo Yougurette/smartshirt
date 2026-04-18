@@ -37,7 +37,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 
   void onDisconnect(BLEServer *server) override {
     bleClientConnected = false;
-    server->getAdvertising()->start();
+    BLEDevice::startAdvertising();
   }
 };
 
@@ -51,7 +51,12 @@ void setupBle() {
   txCharacteristic->addDescriptor(new BLE2902());
 
   service->start();
-  server->getAdvertising()->start();
+  BLEAdvertising *advertising = BLEDevice::getAdvertising();
+  advertising->addServiceUUID(BLE_SERVICE_UUID);
+  advertising->setScanResponse(true);
+  advertising->setMinPreferred(0x06);
+  advertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
 }
 
 void writeRegister(uint8_t reg, uint8_t value) {

@@ -272,10 +272,19 @@ async function connectBle() {
   await disconnectSource();
 
   try {
-    state.bleDevice = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [BLE_UART_SERVICE] }],
-      optionalServices: [BLE_UART_SERVICE],
-    });
+    // 1) Primär: strikt nach Service filtern
+    // 2) Fallback: nach Gerätename suchen (hilft wenn Service nicht korrekt advertised wird)
+    try {
+      state.bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [BLE_UART_SERVICE] }],
+        optionalServices: [BLE_UART_SERVICE],
+      });
+    } catch {
+      state.bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ namePrefix: "SmartShirt" }, { namePrefix: "ESP32" }],
+        optionalServices: [BLE_UART_SERVICE],
+      });
+    }
 
     const server = await state.bleDevice.gatt.connect();
     const service = await server.getPrimaryService(BLE_UART_SERVICE);
@@ -288,7 +297,9 @@ async function connectBle() {
     state.source = "ble";
     els.connectionStatus.textContent = "ESP32 via BLE verbunden ✅";
   } catch (err) {
-    els.connectionStatus.textContent = `BLE fehlgeschlagen: ${err.message}`;
+    els.connectionStatus.textContent =
+      `BLE fehlgeschlagen: ${err.message}. ` +
+      "Tipp: Firmware neu flashen, Board neu starten, und Chrome auf localhost/127.0.0.1 nutzen.";
   }
 }
 
