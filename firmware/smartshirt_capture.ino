@@ -1,157 +1,178 @@
+/*
+  SmartShirt ESP32 Firmware
+  Sensoren: MPU6050 (I2C) + 2x Flex (ADC)
+  Ausgabe:  Serial  +  BLE Notify  +  WebSocket (WiFi Port 81)
+
+  Benötigte Libraries (Arduino Library Manager):
+    - arduinoWebSockets  (by Markus Sattler / Links2004)
+    - ESP32 Board Package (espressif/arduino-esp32)
+*/
+
 #include <Wire.h>
+#include <WiFi.h>
+#include <WebSocketsServer.h>
+#include <ESPmDNS.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
-#define I2C_SDA 18
-#define I2C_SCL 22
-#define MPU_ADDR 0x68
-#define FLEX_LEFT 34
+// ── WiFi Zugangsdaten  ←  HIER ANPASSEN ─────────────────────────
+const char* WIFI_SSID = "DEIN_WLAN_NAME";
+const char* WIFI_PASS = "DEIN_WLAN_PASSWORT";
+// ────────────────────────────────────────────────────────────────
+
+// ── Pins ─────────────────────────────────────────────────────────
+#define I2C_SDA    18
+#define I2C_SCL    22
+#define MPU_ADDR   0x68
+#define FLEX_LEFT  34
 #define FLEX_RIGHT 35
 
-#define BLE_DEVICE_NAME "SmartShirt-ESP32"
-#define BLE_SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-#define BLE_CHAR_TX_UUID "6e400003-b5a3-f393-e0a9-e50e24dcca9e" // notify device -> app
+// ── BLE ──────────────────────────────────────────────────────────
+#define BLE_NAME     "SmartShirt-ESP32"
+#define SVC_UUID     "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define TX_CHAR_UUID "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
-int16_t accelX, accelY, accelZ;
-int16_t gyroX, gyroY, gyroZ;
+// ── Sensor Variablen ─────────────────────────────────────────────
+int16_t accelX, accelY, accelZ, gyroX, gyroY, gyroZ;
+float fL=0, fR=0, fAX=0, fAY=0, fAZ=0, fGX=0, fGY=0, fGZ=0;
+const float ALPHA = 0.2f;
 
-float filteredLeft = 0;
-float filteredRight = 0;
-float filteredAX = 0;
-float filteredAY = 0;
-float filteredAZ = 0;
-float filteredGX = 0;
-float filteredGY = 0;
-float filteredGZ = 0;
+// ── Verbindungen ─────────────────────────────────────────────────
+WebSocketsServer ws(81);
+BLECharacteristic* txChar = nullptr;
+bool bleClientOn  = false;
+bool wifiOk       = false;
 
-const float alpha = 0.2f;
-BLECharacteristic *txCharacteristic = nullptr;
-bool bleClientConnected = false;
-
-class ServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer *server) override {
-    bleClientConnected = true;
-  }
-
-  void onDisconnect(BLEServer *server) override {
-    bleClientConnected = false;
+// ── BLE Callbacks ────────────────────────────────────────────────
+class BleCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer*)    override { bleClientOn = true;  }
+  void onDisconnect(BLEServer*) override {
+    bleClientOn = false;
     BLEDevice::startAdvertising();
   }
 };
 
-void setupBle() {
-  BLEDevice::init(BLE_DEVICE_NAME);
-  BLEServer *server = BLEDevice::createServer();
-  server->setCallbacks(new ServerCallbacks());
-
-  BLEService *service = server->createService(BLE_SERVICE_UUID);
-  txCharacteristic = service->createCharacteristic(BLE_CHAR_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY);
-  txCharacteristic->addDescriptor(new BLE2902());
-
-  service->start();
-  BLEAdvertising *advertising = BLEDevice::getAdvertising();
-  advertising->addServiceUUID(BLE_SERVICE_UUID);
-  advertising->setScanResponse(true);
-  advertising->setMinPreferred(0x06);
-  advertising->setMinPreferred(0x12);
-  BLEDevice::startAdvertising();
+// ── WebSocket Callback ───────────────────────────────────────────
+void onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
+  if (type == WStype_CONNECTED) {
+    Serial.printf("[WS] Client #%u verbunden\n", num);
+  }
 }
 
-void writeRegister(uint8_t reg, uint8_t value) {
+// ── MPU Hilfsfunktionen ──────────────────────────────────────────
+void mpuWrite(uint8_t reg, uint8_t val) {
   Wire.beginTransmission(MPU_ADDR);
-  Wire.write(reg);
-  Wire.write(value);
+  Wire.write(reg); Wire.write(val);
   Wire.endTransmission();
 }
 
-bool readRegisters(uint8_t startReg, uint8_t count, uint8_t *data) {
+bool mpuRead(uint8_t startReg, uint8_t count, uint8_t* buf) {
   Wire.beginTransmission(MPU_ADDR);
   Wire.write(startReg);
-
-  if (Wire.endTransmission(false) != 0) {
-    return false;
-  }
-
-  uint8_t received = Wire.requestFrom(MPU_ADDR, count);
-  if (received != count) {
-    return false;
-  }
-
-  for (uint8_t i = 0; i < count; i++) {
-    data[i] = Wire.read();
-  }
-
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(MPU_ADDR, count) != count) return false;
+  for (uint8_t i = 0; i < count; i++) buf[i] = Wire.read();
   return true;
 }
 
-float lowPass(float oldValue, float newValue) {
-  return oldValue + alpha * (newValue - oldValue);
-}
+float lp(float old, float neu) { return old + ALPHA * (neu - old); }
 
+// ── Setup ────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  delay(1500);
+  delay(1000);
+  Serial.println("\n=== SmartShirt Boot ===");
 
+  // MPU6050 initialisieren
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(100000);
   delay(200);
-
-  writeRegister(0x6B, 0x00);
+  mpuWrite(0x6B, 0x00);  // wake up
   delay(50);
-  writeRegister(0x1B, 0x08);
-  delay(10);
-  writeRegister(0x1C, 0x10);
-  delay(10);
+  mpuWrite(0x1B, 0x08);  // Gyro  ±500°/s
+  mpuWrite(0x1C, 0x10);  // Accel ±8g
+  Serial.println("MPU6050 bereit");
 
-  setupBle();
-  Serial.println("SmartShirt stream ready (Serial + BLE)");
-}
+  // WiFi verbinden
+  Serial.printf("WiFi: verbinde mit \"%s\" ...\n", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 10000) {
+    delay(500); Serial.print(".");
+  }
+  Serial.println();
 
-void loop() {
-  uint8_t rawData[14];
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiOk = true;
+    Serial.print("WiFi verbunden! IP: ");
+    Serial.println(WiFi.localIP());
 
-  if (!readRegisters(0x3B, 14, rawData)) {
-    delay(30);
-    return;
+    // mDNS: erreichbar als  smartshirt.local
+    if (MDNS.begin("smartshirt")) {
+      Serial.println("mDNS: smartshirt.local");
+    }
+
+    ws.begin();
+    ws.onEvent(onWsEvent);
+    Serial.println("WebSocket Server auf Port 81 gestartet");
+    Serial.print("App-URL: ws://");
+    Serial.print(WiFi.localIP());
+    Serial.println(":81");
+  } else {
+    Serial.println("WiFi NICHT verbunden — nur BLE + Serial aktiv");
+    Serial.println("Prüfe SSID und Passwort in der Firmware!");
   }
 
-  accelX = (int16_t)((rawData[0] << 8) | rawData[1]);
-  accelY = (int16_t)((rawData[2] << 8) | rawData[3]);
-  accelZ = (int16_t)((rawData[4] << 8) | rawData[5]);
+  // BLE starten
+  BLEDevice::init(BLE_NAME);
+  BLEServer* srv = BLEDevice::createServer();
+  srv->setCallbacks(new BleCallbacks());
+  BLEService* svc = srv->createService(SVC_UUID);
+  txChar = svc->createCharacteristic(TX_CHAR_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+  txChar->addDescriptor(new BLE2902());
+  svc->start();
+  BLEAdvertising* adv = BLEDevice::getAdvertising();
+  adv->addServiceUUID(SVC_UUID);
+  adv->setScanResponse(true);
+  BLEDevice::startAdvertising();
+  Serial.println("BLE Advertising gestartet");
+  Serial.println("=== Bereit ===\n");
+}
 
-  gyroX = (int16_t)((rawData[8] << 8) | rawData[9]);
-  gyroY = (int16_t)((rawData[10] << 8) | rawData[11]);
-  gyroZ = (int16_t)((rawData[12] << 8) | rawData[13]);
+// ── Loop ─────────────────────────────────────────────────────────
+void loop() {
+  if (wifiOk) ws.loop();
 
-  int leftRaw = analogRead(FLEX_LEFT);
-  int rightRaw = analogRead(FLEX_RIGHT);
+  uint8_t raw[14];
+  if (!mpuRead(0x3B, 14, raw)) { delay(30); return; }
 
-  filteredLeft = lowPass(filteredLeft, leftRaw);
-  filteredRight = lowPass(filteredRight, rightRaw);
-  filteredAX = lowPass(filteredAX, accelX);
-  filteredAY = lowPass(filteredAY, accelY);
-  filteredAZ = lowPass(filteredAZ, accelZ);
-  filteredGX = lowPass(filteredGX, gyroX);
-  filteredGY = lowPass(filteredGY, gyroY);
-  filteredGZ = lowPass(filteredGZ, gyroZ);
+  accelX = (int16_t)((raw[0]<<8)|raw[1]);
+  accelY = (int16_t)((raw[2]<<8)|raw[3]);
+  accelZ = (int16_t)((raw[4]<<8)|raw[5]);
+  gyroX  = (int16_t)((raw[8]<<8)|raw[9]);
+  gyroY  = (int16_t)((raw[10]<<8)|raw[11]);
+  gyroZ  = (int16_t)((raw[12]<<8)|raw[13]);
 
-  String line = "L:" + String((int)filteredLeft) +
-                ",R:" + String((int)filteredRight) +
-                ",AX:" + String((int)filteredAX) +
-                ",AY:" + String((int)filteredAY) +
-                ",AZ:" + String((int)filteredAZ) +
-                ",GX:" + String((int)filteredGX) +
-                ",GY:" + String((int)filteredGY) +
-                ",GZ:" + String((int)filteredGZ);
+  fL  = lp(fL,  analogRead(FLEX_LEFT));
+  fR  = lp(fR,  analogRead(FLEX_RIGHT));
+  fAX = lp(fAX, accelX); fAY = lp(fAY, accelY); fAZ = lp(fAZ, accelZ);
+  fGX = lp(fGX, gyroX);  fGY = lp(fGY, gyroY);  fGZ = lp(fGZ, gyroZ);
+
+  String line = "L:"  + String((int)fL)  +
+                ",R:" + String((int)fR)  +
+                ",AX:"+ String((int)fAX) +
+                ",AY:"+ String((int)fAY) +
+                ",AZ:"+ String((int)fAZ) +
+                ",GX:"+ String((int)fGX) +
+                ",GY:"+ String((int)fGY) +
+                ",GZ:"+ String((int)fGZ);
 
   Serial.println(line);
 
-  if (bleClientConnected && txCharacteristic != nullptr) {
-    txCharacteristic->setValue(line.c_str());
-    txCharacteristic->notify();
-  }
+  if (wifiOk)                       ws.broadcastTXT(line);
+  if (bleClientOn && txChar)        { txChar->setValue(line.c_str()); txChar->notify(); }
 
   delay(35);
 }

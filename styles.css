@@ -191,6 +191,57 @@ body {
   min-height: 1.2em;
 }
 
+/* WiFi group on connect screen */
+.wifi-group {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.wifi-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--blue);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wifi-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.wifi-input {
+  flex: 1;
+  border: 2px solid var(--slate-200);
+  border-radius: 999px;
+  padding: 0.6rem 1rem;
+  font-size: 0.875rem;
+  color: var(--slate-900);
+  outline: none;
+  transition: border-color var(--ease);
+}
+.wifi-input:focus { border-color: var(--blue); }
+
+.divider {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--slate-400);
+  font-weight: 600;
+  position: relative;
+}
+.divider::before, .divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 38%;
+  height: 1px;
+  background: var(--slate-200);
+}
+.divider::before { left: 0; }
+.divider::after  { right: 0; }
+
 /* ── Calibration ───────────────────────────────────────────────── */
 .info-banner {
   display: flex;
