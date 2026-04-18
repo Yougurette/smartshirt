@@ -213,14 +213,16 @@ async function connectBle() {
     }
 
     state.bleChar = await service.getCharacteristic(BLE_TX_CHAR);
-    await state.bleChar.startNotifications();
     state.bleChar.addEventListener("characteristicvaluechanged", onBleData);
+    await state.bleChar.startNotifications();
     dom.liveData.textContent = "BLE verbunden — warte auf erste Daten …";
+    startBlePolling();
 
     device.addEventListener("gattserverdisconnected", () => {
       dom.connDot.className = "conn-dot";
       dom.connectionStatus.textContent = "Verbindung unterbrochen — bitte neu verbinden.";
       state.connected = false;
+      state.source = null;
     });
 
     onConnected("ble");
@@ -362,6 +364,26 @@ function onBleData(event) {
       dom.liveData.textContent = `[RAW, parse failed]:\n${trimmed}`;
     }
   });
+}
+
+async function startBlePolling() {
+  // Fallback: if notifications don't arrive, poll via readValue()
+  await new Promise(r => setTimeout(r, 1000)); // give notifications 1s to work
+  if (!state.connected || state.source !== "ble") return;
+  if (sampleCount > 0) return; // notifications are working, no need to poll
+
+  dom.liveData.textContent = "BLE: Polling-Modus aktiv …";
+  while (state.connected && state.source === "ble" && state.bleChar) {
+    try {
+      const val = await state.bleChar.readValue();
+      const text = new TextDecoder().decode(val);
+      state.bleBuffer += text + "\n";
+      const lines = state.bleBuffer.split("\n");
+      state.bleBuffer = lines.pop() ?? "";
+      lines.forEach(l => { const s = parseLine(l.trim()); if (s) handleSample(s); });
+    } catch (e) { /* ignore read errors */ }
+    await new Promise(r => setTimeout(r, 50));
+  }
 }
 
 async function readSerialLoop() {
